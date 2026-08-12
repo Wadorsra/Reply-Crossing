@@ -1,722 +1,1390 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ระบบตรวจจับความเร็วรถและหมวกกันน็อค</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-  <style>
-    :root {
-      --bg: #0b0f14;
-      --panel: #141a22;
-      --panel-2: #1b232d;
-      --line: #2b3542;
-      --text: #eef3f6;
-      --muted: #9aa7b3;
-      --faint: #65717d;
-      --blue: #38bdf8;
-      --green: #3ddc97;
-      --yellow: #facc15;
-      --red: #ff5a4f;
-      --ink: #071016;
-      --radius: 8px;
-      --font: "IBM Plex Sans Thai", system-ui, sans-serif;
-      --mono: "IBM Plex Mono", monospace;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบตรวจจับรถจอดทับทางม้าลาย</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0a0c0f;
+    --panel:#13171c;
+    --panel-alt:#191e25;
+    --hairline:#262c34;
+    --text:#e8ecef;
+    --text-dim:#8a929c;
+    --text-faint:#565e68;
+    --red:#ff4438;
+    --red-dim:#4a1712;
+    --green:#35d07f;
+    --green-dim:#0f3323;
+    --amber:#ffc53d;
+    --cyan:#34d2ff;
+    --radius:10px;
+    --font-th: 'IBM Plex Sans Thai', sans-serif;
+    --font-disp: 'Space Grotesk', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--void); color:var(--text); font-family:var(--font-th); min-height:100%;}
+  body{padding-bottom:60px;}
+  a{color:inherit;}
+  button{font-family:var(--font-th); cursor:pointer;}
+  ::selection{background:var(--amber); color:#000;}
+  :focus-visible{outline:2px solid var(--cyan); outline-offset:2px;}
 
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      min-height: 100vh;
-    }
+  .zebra-bar{
+    height:7px; width:100%;
+    background:repeating-linear-gradient(115deg,#000 0 14px, #fff 14px 28px);
+    position:relative;
+  }
+  .zebra-bar::after{
+    content:''; position:absolute; inset:0;
+    background:repeating-linear-gradient(115deg, transparent 0 14px, rgba(255,197,61,.55) 14px 15px);
+  }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 16px 22px;
-      border-bottom: 1px solid var(--line);
-      background: #10161d;
-      flex-wrap: wrap;
-    }
+  header{
+    padding:16px 20px 14px; background:var(--panel);
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    border-bottom:1px solid var(--hairline);
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .icon{font-size:30px; filter:drop-shadow(0 0 8px rgba(255,197,61,.35));}
+  .brand h1{font-family:var(--font-disp); font-size:17px; font-weight:700; letter-spacing:.2px;}
+  .brand p{font-size:11px; color:var(--text-dim); font-family:var(--font-mono); letter-spacing:.5px; margin-top:2px;}
+  .header-right{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .clock{font-family:var(--font-mono); font-size:13px; color:var(--text-dim); letter-spacing:1px;}
+  .status-pill{
+    display:flex; align-items:center; gap:7px; font-family:var(--font-mono); font-size:11.5px;
+    padding:6px 12px; border-radius:20px; background:var(--panel-alt); border:1px solid var(--hairline); color:var(--text-dim);
+  }
+  .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint);}
+  .status-pill.live .dot{background:var(--green); box-shadow:0 0 8px var(--green);}
+  .status-pill.alert{background:var(--red-dim); border-color:#6b241d; color:#ffb3ac;}
+  .status-pill.alert .dot{background:var(--red); box-shadow:0 0 8px var(--red); animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.35;}}
 
-    h1 { font-size: 20px; margin: 0; }
-    .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-    .status {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      color: var(--muted);
-      padding: 8px 12px;
-      border-radius: 999px;
-      font: 12px var(--mono);
-    }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-    .status.live .dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
-    .status.alert .dot { background: var(--red); box-shadow: 0 0 10px var(--red); }
+  .light-toggle{display:flex; border-radius:20px; overflow:hidden; border:1px solid var(--hairline);}
+  .light-toggle button{
+    border:none; background:var(--panel-alt); color:var(--text-dim); font-size:11.5px; font-family:var(--font-mono);
+    padding:6px 13px; display:flex; align-items:center; gap:6px;
+  }
+  .light-toggle button.on.red{background:var(--red-dim); color:#ffb3ac;}
+  .light-toggle button.on.green{background:var(--green-dim); color:#a4f2ce;}
 
-    main {
-      width: min(1280px, 100%);
-      margin: 0 auto;
-      padding: 18px;
-      display: grid;
-      grid-template-columns: minmax(0, 1.55fr) 390px;
-      gap: 16px;
-      align-items: start;
-    }
+  nav.tabs{
+    display:flex; gap:2px; background:var(--panel); padding:0 20px; overflow-x:auto;
+    border-bottom:1px solid var(--hairline);
+  }
+  nav.tabs button{
+    background:none; border:none; color:var(--text-dim); font-size:13px; padding:13px 16px;
+    border-bottom:2px solid transparent; white-space:nowrap; display:flex; gap:7px; align-items:center;
+  }
+  nav.tabs button.active{color:var(--text); border-bottom-color:var(--amber);}
 
-    @media (max-width: 980px) {
-      main { grid-template-columns: 1fr; }
-    }
+  main{max-width:1180px; margin:0 auto; padding:22px 20px;}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
 
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 14px;
-    }
+  .grid-detect{display:grid; grid-template-columns:1.55fr 1fr; gap:18px; align-items:start;}
+  @media (max-width:880px){.grid-detect{grid-template-columns:1fr;}}
 
-    .card h2 {
-      font-size: 15px;
-      margin: 0 0 12px;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-    }
+  .card{background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); padding:16px;}
+  .card h2{font-family:var(--font-disp); font-size:13.5px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:7px;}
+  .card h2 .sub{font-size:11px; color:var(--text-faint); font-weight:400; font-family:var(--font-th);}
 
-    .stage {
-      position: relative;
-      aspect-ratio: 16 / 9;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      overflow: hidden;
-      background: #030609;
-    }
+  .viewfinder{
+    position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:16/9;
+    border:1px solid var(--hairline);
+  }
+  .viewfinder video, .viewfinder canvas{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+  .viewfinder canvas{cursor:default; touch-action:none;}
+  .viewfinder.drawing canvas{cursor:crosshair;}
+  .zone-msg{font-size:11.5px; font-family:var(--font-mono); color:var(--text-dim); margin-top:9px; min-height:14px;}
+  .zone-msg.ok{color:var(--green);}
+  .zone-msg.err{color:var(--red);}
+  .corner{position:absolute; width:22px; height:22px; border-color:rgba(255,197,61,.85); z-index:3; pointer-events:none;}
+  .corner.tl{top:8px; left:8px; border-top:2px solid; border-left:2px solid;}
+  .corner.tr{top:8px; right:8px; border-top:2px solid; border-right:2px solid;}
+  .corner.bl{bottom:8px; left:8px; border-bottom:2px solid; border-left:2px solid;}
+  .corner.br{bottom:8px; right:8px; border-bottom:2px solid; border-right:2px solid;}
+  .placeholder{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    color:var(--text-faint); font-size:12.5px; text-align:center; padding:20px; z-index:2;
+  }
+  .placeholder .big{font-size:34px;}
+  .readout{
+    display:flex; gap:14px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim);
+    padding:8px 2px 0; flex-wrap:wrap;
+  }
+  .readout b{color:var(--text);}
+  .readout .rd-alert{color:var(--red);}
 
-    video, canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
+  .alert-banner{
+    display:none; margin-top:10px; padding:10px 14px; border-radius:8px; background:var(--red-dim);
+    border:1px solid #6b241d; color:#ffcfc9; font-size:12.5px; align-items:center; gap:9px;
+    animation:flash 1s infinite;
+  }
+  .alert-banner.show{display:flex;}
+  @keyframes flash{0%,100%{background:var(--red-dim);} 50%{background:#5a1a14;}}
 
-    .empty {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      color: var(--faint);
-      text-align: center;
-      padding: 20px;
-    }
+  .controls-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; padding:8px 13px; border-radius:7px; font-size:12.5px;
+    border:1px solid var(--hairline); background:var(--panel-alt); color:var(--text);
+  }
+  .btn:hover{border-color:#3a424c;}
+  .btn.primary{background:var(--amber); color:#171308; border-color:var(--amber); font-weight:600;}
+  .btn.danger{background:var(--red-dim); color:#ffb3ac; border-color:#6b241d;}
+  .btn.active-toggle{background:var(--cyan); color:#08222b; border-color:var(--cyan);}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
 
-    .toolbar, .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
+  .side-stack{display:flex; flex-direction:column; gap:14px;}
+  .light-big{display:flex; gap:8px;}
+  .light-big button{
+    flex:1; padding:14px 8px; border-radius:8px; border:1px solid var(--hairline); background:var(--panel-alt);
+    color:var(--text-dim); font-size:12.5px; display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  .light-big button .dot{width:16px; height:16px; border-radius:50%; background:#333;}
+  .light-big button.on.red{background:var(--red-dim); border-color:#6b241d; color:#ffb3ac;}
+  .light-big button.on.red .dot{background:var(--red); box-shadow:0 0 10px var(--red);}
+  .light-big button.on.green{background:var(--green-dim); border-color:#1c5e3c; color:#a4f2ce;}
+  .light-big button.on.green .dot{background:var(--green); box-shadow:0 0 10px var(--green);}
+  .light-note{font-size:11px; color:var(--text-faint); margin-top:8px; line-height:1.5;}
 
-    .toolbar { margin-top: 12px; }
+  .mini-stats{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .mini-stat{background:var(--panel-alt); border:1px solid var(--hairline); border-radius:7px; padding:10px 12px;}
+  .mini-stat .v{font-family:var(--font-disp); font-size:22px; font-weight:700;}
+  .mini-stat .l{font-size:10.5px; color:var(--text-dim); margin-top:2px;}
 
-    button, label.file-btn {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      color: var(--text);
-      border-radius: 7px;
-      padding: 9px 12px;
-      font: 600 13px var(--font);
-      cursor: pointer;
-    }
+  .log-list{list-style:none; display:flex; flex-direction:column; gap:6px; max-height:230px; overflow-y:auto;}
+  .log-list li{
+    font-size:11.5px; font-family:var(--font-mono); background:var(--panel-alt); border:1px solid var(--hairline);
+    border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; gap:8px; color:var(--text-dim);
+  }
+  .log-list li b{color:var(--red); font-weight:600;}
+  .log-empty{font-size:11.5px; color:var(--text-faint); padding:6px 2px;}
+  .card-head-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .link-btn{background:none; border:none; color:var(--text-dim); font-size:11px; text-decoration:underline;}
 
-    button:hover, label.file-btn:hover { border-color: #435163; }
-    button.primary { background: var(--blue); border-color: var(--blue); color: var(--ink); }
-    button.danger { background: rgba(255,90,79,.13); border-color: rgba(255,90,79,.55); color: #ffc9c5; }
-    input[type=file] { display: none; }
+  .stats-cards{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
+  @media (max-width:760px){.stats-cards{grid-template-columns:1fr 1fr;}}
+  .stat-card{background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); padding:16px;}
+  .stat-card .v{font-family:var(--font-disp); font-size:30px; font-weight:700;}
+  .stat-card .v small{font-size:14px; color:var(--text-dim); font-weight:500;}
+  .stat-card .l{font-size:11.5px; color:var(--text-dim); margin-top:4px;}
 
-    .meters {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-top: 12px;
-    }
+  .charts-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;}
+  @media (max-width:760px){.charts-grid{grid-template-columns:1fr;}}
+  canvas.chart{width:100%; height:180px;}
 
-    @media (max-width: 720px) {
-      .meters { grid-template-columns: repeat(2, 1fr); }
-    }
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th,td{text-align:left; padding:8px 9px; border-bottom:1px solid var(--hairline); font-family:var(--font-mono);}
+  th{color:var(--text-dim); font-weight:500; font-size:11px;}
+  td.dur{color:var(--amber);}
 
-    .meter {
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 12px;
-      min-height: 78px;
-    }
+  .photo-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-top:14px;}
+  .photo-cell{position:relative; border-radius:7px; overflow:hidden; border:1px solid var(--hairline); background:#000; aspect-ratio:4/3;}
+  .photo-cell img{width:100%; height:100%; object-fit:cover; display:block;}
+  .photo-cell .tag{position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.65); font-family:var(--font-mono); font-size:9.5px; padding:4px 6px; color:#fff;}
 
-    .meter .value {
-      font: 700 28px var(--mono);
-      line-height: 1;
-    }
+  .settings-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:820px){.settings-grid{grid-template-columns:1fr;}}
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  .field label{display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim); margin-bottom:6px;}
+  .field label span.val{color:var(--amber); font-family:var(--font-mono);}
+  .field input[type=range]{width:100%; accent-color:var(--amber);}
+  .field select, .field input[type=text]{
+    width:100%; background:var(--panel-alt); border:1px solid var(--hairline); color:var(--text); padding:8px 10px;
+    border-radius:6px; font-size:12.5px; font-family:var(--font-th);
+  }
+  .seg{display:flex; border-radius:6px; overflow:hidden; border:1px solid var(--hairline);}
+  .seg button{flex:1; background:var(--panel-alt); border:none; color:var(--text-dim); padding:8px; font-size:12px;}
+  .seg button.on{background:var(--amber); color:#171308; font-weight:600;}
 
-    .meter .label {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
+  .code-editor textarea{
+    width:100%; min-height:260px; background:#0d1014; color:#dbe3ea; border:1px solid var(--hairline);
+    border-radius:7px; padding:12px; font-family:var(--font-mono); font-size:12px; line-height:1.6; resize:vertical;
+  }
+  .code-msg{font-size:11.5px; font-family:var(--font-mono); margin-top:8px; color:var(--text-dim); min-height:16px;}
+  .code-msg.ok{color:var(--green);}
+  .code-msg.err{color:var(--red);}
 
-    .danger-text { color: var(--red); }
-    .warn-text { color: var(--yellow); }
-    .ok-text { color: var(--green); }
+  .modal-bg{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.8); z-index:50; align-items:center; justify-content:center; padding:30px;
+  }
+  .modal-bg.show{display:flex;}
+  .modal-bg img{max-width:100%; max-height:85vh; border-radius:8px; border:1px solid var(--hairline);}
 
-    .stack { display: grid; gap: 14px; }
-    .field { margin-bottom: 13px; }
-    .field:last-child { margin-bottom: 0; }
-    .field label {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 6px;
-    }
-    .field output { color: var(--yellow); font-family: var(--mono); }
-    .field input[type=range] { width: 100%; accent-color: var(--yellow); }
-    .field input[type=text], .field select {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      background: var(--panel-2);
-      color: var(--text);
-      padding: 9px 10px;
-      font: 13px var(--font);
-    }
+  .footer-note{text-align:center; font-size:10.5px; color:var(--text-faint); font-family:var(--font-mono); padding:26px 20px 0;}
 
-    .seg {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      overflow: hidden;
-    }
-    .seg button { border: 0; border-radius: 0; }
-    .seg button.on { background: var(--yellow); color: var(--ink); }
-
-    .log {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 7px;
-      max-height: 260px;
-      overflow: auto;
-    }
-
-    .log li {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      border-radius: 7px;
-      padding: 9px 10px;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      font: 12px var(--mono);
-      color: var(--muted);
-    }
-
-    .note {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.55;
-      margin: 10px 0 0;
-    }
-
-    .formula {
-      background: #0e1319;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 10px;
-      color: #cad6df;
-      font: 12px/1.6 var(--mono);
-      white-space: pre-wrap;
-    }
-  </style>
+  @media (prefers-reduced-motion:reduce){
+    .status-pill.alert .dot, .alert-banner{animation:none;}
+  }
+</style>
 </head>
 <body>
-  <header>
+
+<header>
+  <div class="brand">
+    <div class="icon">🦓</div>
     <div>
-      <h1>ระบบตรวจจับความเร็วรถและหมวกกันน็อค</h1>
-      <div class="sub">HTML + JavaScript + TensorFlow.js สำหรับต้นแบบและปรับค่าฟิสิกส์จากภาพจริง</div>
+      <h1>ระบบตรวจจับรถจอดทับทางม้าลาย</h1>
+      <p>ZEBRA CROSSING VIOLATION DETECTOR &middot; v1.0</p>
     </div>
-    <div class="status" id="status"><span class="dot"></span><span id="statusText">พร้อมใช้งาน</span></div>
-  </header>
+  </div>
+  <div class="header-right">
+    <span class="clock" id="clock">--:--:--</span>
+    <div class="status-pill" id="systemStatus"><span class="dot"></span><span id="systemStatusText">ไม่ได้ใช้งาน</span></div>
+    <div class="light-toggle" id="lightToggleMini">
+      <button data-light="red" class="on red">🔴 แดง</button>
+      <button data-light="green">🟢 เขียว</button>
+    </div>
+  </div>
+</header>
+<div class="zebra-bar"></div>
 
-  <main>
-    <section class="stack">
-      <div class="card">
-        <h2>
-          <span>ภาพตรวจจับ</span>
-          <span class="sub" id="modelState">ยังไม่โหลดโมเดล</span>
-        </h2>
-        <div class="stage" id="stage">
-          <video id="video" muted playsinline></video>
-          <canvas id="overlay"></canvas>
-          <div class="empty" id="empty">กดเปิดกล้องหรือเลือกไฟล์วิดีโอเพื่อเริ่มตรวจจับ</div>
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="detect">📷 ตรวจจับ</button>
+  <button class="tab-btn" data-tab="stats">📊 สถิติ</button>
+  <button class="tab-btn" data-tab="photos">🖼 ภาพถ่าย</button>
+  <button class="tab-btn" data-tab="settings">⚙️ ตั้งค่า</button>
+  <button class="tab-btn" data-tab="code">💻 แก้ไขโค้ด</button>
+</nav>
+
+<main>
+
+  <!-- DETECT TAB -->
+  <section class="tabpanel active" id="tab-detect">
+    <div class="grid-detect">
+      <div>
+        <div class="card">
+          <div class="viewfinder" id="viewfinder">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+            <div class="placeholder" id="placeholder">
+              <div class="big">📷</div>
+              <div>กดปุ่ม "เปิดกล้อง" เพื่อเริ่มต้น</div>
+            </div>
+          </div>
+          <div class="readout">
+            <span>FPS <b id="rdFps">--</b></span>
+            <span>สัญญาณไฟ <b id="rdLight">🔴 แดง</b></span>
+            <span>รถที่ตรวจพบ <b id="rdVehicles">0</b></span>
+            <span class="rd-alert" id="rdAlertText" style="display:none">⚠️ ตรวจพบรถจอดทับทางม้าลาย</span>
+          </div>
+          <div class="alert-banner" id="alertBanner">🚨 ตรวจพบรถจอดทับทางม้าลาย! กำลังแจ้งเตือน…</div>
+          <div class="controls-row">
+            <button class="btn primary" id="btnCamera">📷 เปิดกล้อง</button>
+            <button class="btn" id="btnAutoZone">🪄 ตรวจจับโซนอัตโนมัติ</button>
+            <button class="btn" id="btnDraw">✏️ วาดโซนเอง</button>
+            <button class="btn" id="btnClearZone">🗑 ล้างโซน</button>
+            <button class="btn" id="btnCapture">📸 ถ่ายภาพ</button>
+            <button class="btn" id="btnExportQuick">💾 Export</button>
+            <button class="btn active-toggle" id="btnSound">🔊 เสียง ON</button>
+          </div>
+          <div class="zone-msg" id="zoneMsg"></div>
         </div>
-        <div class="toolbar">
-          <button class="primary" id="cameraBtn">เปิดกล้อง</button>
-          <label class="file-btn" for="videoFile">เลือกวิดีโอ</label>
-          <input id="videoFile" type="file" accept="video/*">
-          <button id="calibrateBtn">วาดเส้นคาลิเบรต 2 จุด</button>
-          <button id="resetTracksBtn">ล้างการติดตาม</button>
+
+        <div class="card" style="margin-top:16px;">
+          <h2>📐 คู่มือกำหนดโซน</h2>
+          <p style="font-size:12px; color:var(--text-dim); line-height:1.8;">
+            <b style="color:var(--text)">🪄 ตรวจจับโซนอัตโนมัติ</b> — ให้ระบบวิเคราะห์ภาพหาลายทางม้าลาย (แถบขาว) แล้ววาดโซนให้ทันที เหมาะเมื่อกล้องเห็นทางม้าลายชัดเจน<br>
+            <b style="color:var(--text)">✏️ วาดโซนเอง</b> — คลิกบนภาพเพื่อกำหนดจุด แล้วคลิกใกล้จุดแรกอีกครั้งเพื่อปิดรูปทรง (อย่างน้อย 3 จุด)<br>
+            <b style="color:var(--text)">ปรับแต่ง</b> — ลากจุดสีเหลืองบนภาพเพื่อขยับตำแหน่งได้ตลอดเวลา ไม่ต้องอยู่ในโหมดวาด<br>
+            <b style="color:var(--text)">คีย์ลัด</b> — Backspace ลบจุดล่าสุด, Esc ยกเลิกการวาด<br>
+            <b style="color:var(--text)">โซนรถยนต์</b> — ตรวจจับอัตโนมัติด้วยโมเดล COCO-SSD (TensorFlow.js)
+          </p>
         </div>
-        <p class="note" id="hint">เส้นคาลิเบรตใช้บอกว่าระยะจริงกี่เมตรต่อความยาวบนภาพ จากนั้นระบบจะคำนวณ v = s / t และแปลงเป็น km/h</p>
       </div>
 
-      <div class="meters">
-        <div class="meter"><div class="value" id="speedNow">0</div><div class="label">ความเร็วสูงสุดขณะนี้ km/h</div></div>
-        <div class="meter"><div class="value" id="vehicleCount">0</div><div class="label">จำนวนรถที่พบ</div></div>
-        <div class="meter"><div class="value" id="helmetCount">0</div><div class="label">มอเตอร์ไซค์ใส่หมวก</div></div>
-        <div class="meter"><div class="value" id="alertCount">0</div><div class="label">เหตุการณ์เตือน</div></div>
-      </div>
-
-      <div class="card">
-        <h2>บันทึกเหตุการณ์ <button id="exportBtn">Export CSV</button></h2>
-        <ul class="log" id="log">
-          <li><span>ยังไม่มีเหตุการณ์</span><span>-</span></li>
-        </ul>
-      </div>
-    </section>
-
-    <aside class="stack">
-      <div class="card">
-        <h2>ตั้งค่าการตรวจจับ</h2>
-        <div class="field">
-          <label>Confidence ขั้นต่ำ <output id="confOut">0.50</output></label>
-          <input id="confidence" type="range" min="0.2" max="0.9" value="0.5" step="0.05">
+      <div class="side-stack">
+        <div class="card">
+          <h2>🚦 สถานะสัญญาณไฟ</h2>
+          <div class="light-big" id="lightToggleBig">
+            <button data-light="red" class="on red"><span class="dot"></span>🔴 ไฟแดง</button>
+            <button data-light="green"><span class="dot"></span>🟢 ไฟเขียว</button>
+          </div>
+          <p class="light-note">ระบบจะแจ้งเตือนเฉพาะเมื่อสัญญาณไฟแดง และมีรถทับโซนทางม้าลายเกินเกณฑ์ที่กำหนดไว้ในหน้าตั้งค่า</p>
         </div>
-        <div class="field">
-          <label>จำกัดความเร็ว <output id="limitOut">60 km/h</output></label>
-          <input id="speedLimit" type="range" min="20" max="140" value="60" step="5">
-        </div>
-        <div class="field">
-          <label>โหมดหมวกกันน็อค</label>
-          <div class="seg" id="helmetMode">
-            <button class="on" data-mode="estimate">ประเมิน</button>
-            <button data-mode="custom">โมเดล TFJS</button>
+
+        <div class="card">
+          <h2>📈 สรุปวันนี้</h2>
+          <div class="mini-stats">
+            <div class="mini-stat"><div class="v" id="sumTotal">0</div><div class="l">การละเมิดทั้งหมด</div></div>
+            <div class="mini-stat"><div class="v" id="sumNow">0</div><div class="l">รถที่ตรวจพบขณะนี้</div></div>
+            <div class="mini-stat"><div class="v" id="sumAcc">--%</div><div class="l">ความแม่นยำเฉลี่ย</div></div>
+            <div class="mini-stat"><div class="v" id="sumZone">--</div><div class="l">สถานะโซน</div></div>
           </div>
         </div>
-        <div class="field">
-          <label>Helmet model.json</label>
-          <input id="helmetModelUrl" type="text" placeholder="models/helmet/model.json">
+
+        <div class="card">
+          <div class="card-head-row"><h2 style="margin:0">📋 บันทึกเหตุการณ์</h2><button class="link-btn" id="btnClearLog">ล้าง</button></div>
+          <ul class="log-list" id="logList"><li class="log-empty">ยังไม่มีเหตุการณ์</li></ul>
         </div>
-        <p class="note">โหมดประเมินใช้การพบคนซ้อนทับกับมอเตอร์ไซค์และตรวจตำแหน่งศีรษะเบื้องต้น เหมาะกับต้นแบบ หากต้องการแม่นขึ้นให้ฝึกโมเดลหมวกแล้วใส่ URL แบบ TFJS</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS TAB -->
+  <section class="tabpanel" id="tab-stats">
+    <div class="stats-cards">
+      <div class="stat-card"><div class="v" id="statTotal">0</div><div class="l">การละเมิดทั้งหมด</div></div>
+      <div class="stat-card"><div class="v" id="statToday">0</div><div class="l">เหตุการณ์วันนี้</div></div>
+      <div class="stat-card"><div class="v" id="statMaxHour">0<small> เหตุการณ์/ชม.</small></div><div class="l">สูงสุดใน 1 ชั่วโมง</div></div>
+      <div class="stat-card"><div class="v" id="statCommonTime">--:--</div><div class="l">เวลาที่พบบ่อยที่สุด</div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="card"><h2>📊 การละเมิดรายชั่วโมง (วันนี้)</h2><canvas class="chart" id="chartHourly"></canvas></div>
+      <div class="card"><h2>📅 การละเมิดรายวัน (7 วัน)</h2><canvas class="chart" id="chartDaily"></canvas></div>
+    </div>
+    <div class="card" style="margin-bottom:16px;">
+      <h2>⏱ ระยะเวลาจอด (วินาที)</h2>
+      <canvas class="chart" id="chartDuration" style="height:150px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-head-row"><h2 style="margin:0">📋 รายการล่าสุด 10 เหตุการณ์</h2></div>
+      <table id="recentTable">
+        <thead><tr><th>เวลา</th><th>ระยะเวลา (วิ)</th><th>Overlap</th><th>Confidence</th></tr></thead>
+        <tbody><tr><td colspan="4" style="color:var(--text-faint); font-family:var(--font-th);">ยังไม่มีข้อมูล</td></tr></tbody>
+      </table>
+      <div class="controls-row">
+        <button class="btn" id="btnExportCsv">📄 Export CSV</button>
+        <button class="btn" id="btnExportJson">{ } Export JSON</button>
+        <button class="btn danger" id="btnClearData">🗑 ล้างข้อมูลทั้งหมด</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHOTOS TAB -->
+  <section class="tabpanel" id="tab-photos">
+    <div class="card">
+      <div class="card-head-row">
+        <h2 style="margin:0">ภาพรถที่ทำผิด <span class="sub" id="photoCount">(0 ภาพ)</span></h2>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="btnDownloadAll">⬇️ โหลดทั้งหมด</button>
+          <button class="btn danger" id="btnClearPhotos">🗑 ล้างภาพ</button>
+        </div>
+      </div>
+      <div class="photo-grid" id="photoGrid"></div>
+      <p class="log-empty" id="photoEmpty">ยังไม่มีภาพถ่าย</p>
+    </div>
+  </section>
+
+  <!-- SETTINGS TAB -->
+  <section class="tabpanel" id="tab-settings">
+    <div class="settings-grid">
+      <div class="card">
+        <h2>🎛 การตรวจจับ</h2>
+        <div class="field"><label>ความน่าจะเป็นขั้นต่ำ (Confidence) <span class="val" id="valConf">0.50</span></label>
+          <input type="range" id="cfgConfidence" min="0.1" max="0.9" step="0.05" value="0.5"></div>
+        <div class="field"><label>% ทับซ้อนที่ถือว่าผิด <span class="val" id="valOverlap">20%</span></label>
+          <input type="range" id="cfgOverlap" min="5" max="90" step="5" value="20"></div>
+        <div class="field"><label>หน่วงเวลาก่อนแจ้งเตือน (วินาที) <span class="val" id="valDelay">2</span></label>
+          <input type="range" id="cfgDelay" min="0" max="15" step="1" value="2"></div>
+        <div class="field"><label>ความกว้างเส้นกรอบตรวจจับ (px) <span class="val" id="valBoxWidth">2</span></label>
+          <input type="range" id="cfgBoxWidth" min="1" max="6" step="1" value="2"></div>
       </div>
 
       <div class="card">
-        <h2>ฟิสิกส์และคาลิเบรต</h2>
-        <div class="field">
-          <label>ระยะจริงของเส้นคาลิเบรต <output id="calibOut">5.0 m</output></label>
-          <input id="calibMeters" type="range" min="1" max="30" value="5" step="0.5">
+        <h2>🔊 การแจ้งเตือน</h2>
+        <div class="field"><label>ข้อความแจ้งเตือนเสียง</label>
+          <input type="text" id="cfgAlertText" value="ตรวจพบรถจอดทับทางม้าลาย กรุณาเคลื่อนย้ายรถ"></div>
+        <div class="field"><label>ภาษาเสียง</label>
+          <div class="seg"><button data-lang="th-TH" class="on">ภาษาไทย</button><button data-lang="en-US">English</button></div>
         </div>
-        <div class="field">
-          <label>เมตรต่อพิกเซล <output id="mppOut">0.050</output></label>
-          <input id="meterPerPixel" type="range" min="0.005" max="0.2" value="0.05" step="0.005">
-        </div>
-        <div class="field">
-          <label>มุมถนนเทียบกล้อง <output id="angleOut">0°</output></label>
-          <input id="roadAngle" type="range" min="-45" max="45" value="0" step="1">
-        </div>
-        <div class="field">
-          <label>ค่าสัมประสิทธิ์แรงเสียดทาน μ <output id="frictionOut">0.70</output></label>
-          <input id="friction" type="range" min="0.2" max="1.0" value="0.7" step="0.05">
-        </div>
-        <div class="field">
-          <label>เวลาตอบสนอง / Reaction <output id="reactionOut">1.0 s</output></label>
-          <input id="reactionTime" type="range" min="0.2" max="3" value="1" step="0.1">
-        </div>
-        <div class="formula" id="physicsBox"></div>
+        <div class="field"><label>ความเร็วเสียง <span class="val" id="valRate">1.0</span></label>
+          <input type="range" id="cfgRate" min="0.5" max="2" step="0.1" value="1"></div>
+        <div class="field"><label>ระยะเวลาระหว่างแจ้งเตือน (วินาที) <span class="val" id="valInterval">5</span></label>
+          <input type="range" id="cfgInterval" min="2" max="30" step="1" value="5"></div>
+        <button class="btn" id="btnTestSound">🔊 ทดสอบเสียง</button>
       </div>
-    </aside>
-  </main>
 
-  <script>
-    const VEHICLES = new Set(["car", "truck", "bus", "motorcycle"]);
-    const $ = (id) => document.getElementById(id);
-    const video = $("video");
-    const canvas = $("overlay");
-    const ctx = canvas.getContext("2d");
-    const stage = $("stage");
-    const state = {
-      model: null,
-      helmetModel: null,
-      running: false,
-      stream: null,
-      tracks: new Map(),
-      nextId: 1,
-      logs: [],
-      calibrating: false,
-      calibPoints: [],
-      helmetMode: "estimate",
-      lastTs: performance.now(),
-      maxSpeed: 0
-    };
-    const cfg = {
-      confidence: 0.5,
-      speedLimit: 60,
-      calibMeters: 5,
-      meterPerPixel: 0.05,
-      roadAngle: 0,
-      friction: 0.7,
-      reactionTime: 1
-    };
+      <div class="card">
+        <h2>📷 กล้องและภาพถ่าย</h2>
+        <div class="field"><label>กล้อง</label><select id="cfgCameraDevice"><option value="">-- เลือกกล้อง --</option></select></div>
+        <div class="field"><label>ความละเอียด</label>
+          <select id="cfgResolution">
+            <option value="1280x720">1280×720 (HD)</option>
+            <option value="1920x1080">1920×1080 (FHD)</option>
+            <option value="640x480">640×480</option>
+          </select>
+        </div>
+        <div class="field"><label>ถ่ายภาพอัตโนมัติเมื่อพบการละเมิด</label>
+          <div class="seg"><button data-auto="on" class="on">เปิด</button><button data-auto="off">ปิด</button></div>
+        </div>
+      </div>
 
-    function setStatus(text, mode = "") {
-      $("statusText").textContent = text;
-      $("status").className = "status " + mode;
-    }
+      <div class="card">
+        <h2>🎨 การแสดงผล</h2>
+        <div class="field"><label>แสดง bounding box</label>
+          <div class="seg"><button data-disp="box" data-v="on" class="on">แสดง</button><button data-disp="box" data-v="off">ซ่อน</button></div>
+        </div>
+        <div class="field"><label>แสดง label และ confidence</label>
+          <div class="seg"><button data-disp="label" data-v="on" class="on">แสดง</button><button data-disp="label" data-v="off">ซ่อน</button></div>
+        </div>
+        <div class="field"><label>แสดงพื้นที่โซนทางม้าลาย (fill)</label>
+          <div class="seg"><button data-disp="zone" data-v="on" class="on">แสดง</button><button data-disp="zone" data-v="off">ซ่อน</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    function resizeCanvas() {
-      const rect = stage.getBoundingClientRect();
-      canvas.width = Math.round(rect.width * devicePixelRatio);
-      canvas.height = Math.round(rect.height * devicePixelRatio);
-      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    }
+  <!-- CODE TAB -->
+  <section class="tabpanel" id="tab-code">
+    <div class="card code-editor">
+      <h2>💻 แก้ไขฟังก์ชันตรวจจับ</h2>
+      <p style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">
+        แก้ไขฟังก์ชัน <b style="color:var(--text)">checkOverlap(box, zonePolygon)</b> ได้โดยตรง — คืนค่าเป็นเปอร์เซ็นต์การทับซ้อน (0–100) ระหว่างกรอบรถกับโซนทางม้าลาย เลือกภาษาได้ทั้ง JavaScript (รันทันที) หรือ C++ (แปลความหมายในเบราว์เซอร์ด้วย JSCPP — ไม่ต้องคอมไพล์ แต่ทำงานช้ากว่า JS พอสมควร)
+      </p>
+      <div class="field" style="max-width:280px;">
+        <div class="seg" id="codeLangSeg">
+          <button data-codelang="js" class="on">JavaScript</button>
+          <button data-codelang="cpp">C++</button>
+        </div>
+      </div>
+      <textarea id="codeArea" spellcheck="false"></textarea>
+      <div class="controls-row">
+        <button class="btn primary" id="btnApplyCode">▶ Apply</button>
+        <button class="btn" id="btnSaveCode">💾 บันทึกโค้ด</button>
+        <button class="btn" id="btnResetCode">↩ Reset</button>
+        <button class="btn" id="btnExportJs">⬇️ Export โค้ด</button>
+      </div>
+      <div class="code-msg" id="codeMsg"></div>
+    </div>
+  </section>
 
-    async function loadModel() {
-      if (state.model) return state.model;
-      $("modelState").textContent = "กำลังโหลด COCO-SSD...";
-      state.model = await cocoSsd.load();
-      $("modelState").textContent = "COCO-SSD พร้อมใช้งาน";
-      return state.model;
-    }
+</main>
 
-    async function loadHelmetModel() {
-      const url = $("helmetModelUrl").value.trim();
-      if (!url) return null;
-      $("modelState").textContent = "กำลังโหลดโมเดลหมวก...";
-      state.helmetModel = await tf.loadGraphModel(url);
-      $("modelState").textContent = "โหลดโมเดลหมวกแล้ว";
-      return state.helmetModel;
-    }
+<div class="modal-bg" id="modalBg"><img id="modalImg" src="" alt="violation photo"></div>
 
-    async function startCamera() {
-      if (state.running && state.stream) {
-        stopVideo();
-        return;
-      }
-      try {
-        await loadModel();
-        state.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
-        video.srcObject = state.stream;
-        video.loop = false;
-        await video.play();
-        beginLoop();
-        $("cameraBtn").textContent = "ปิดกล้อง";
-        $("cameraBtn").classList.add("danger");
-      } catch (err) {
-        setStatus("เปิดกล้องไม่ได้", "alert");
-        alert("ไม่สามารถเปิดกล้องได้: " + err.message);
-      }
-    }
+<p class="footer-note">DETECTOR RUNS FULLY IN-BROWSER · TENSORFLOW.JS + COCO-SSD · NO DATA LEAVES THIS PAGE</p>
 
-    function stopVideo() {
-      state.running = false;
-      if (state.stream) state.stream.getTracks().forEach((t) => t.stop());
-      state.stream = null;
-      video.pause();
-      video.srcObject = null;
-      $("empty").style.display = "grid";
-      $("cameraBtn").textContent = "เปิดกล้อง";
-      $("cameraBtn").classList.remove("danger");
-      setStatus("หยุดทำงาน");
-    }
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/JSCPP@2.0.9/dist/JSCPP.es5.min.js"></script>
 
-    async function useVideoFile(file) {
-      if (!file) return;
-      await loadModel();
-      stopVideo();
-      video.src = URL.createObjectURL(file);
-      video.loop = true;
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- state ---------- */
+  const state = {
+    stream:null, model:null, modelLoading:false, running:false, drawMode:false,
+    zone:[], trafficLight:'red', soundOn:true,
+    settings:{
+      confidence:0.5, overlapPct:20, delaySec:2, boxWidth:2,
+      alertText:"ตรวจพบรถจอดทับทางม้าลาย กรุณาเคลื่อนย้ายรถ", lang:'th-TH', rate:1.0, interval:5,
+      autoCapture:true, showBox:true, showLabel:true, showZone:true, resolution:'1280x720'
+    },
+    violations:[], // {id, time(ms), duration(s), overlap, confidence, photo}
+    photos:[], // {id, time, dataUrl}
+    activeViolation:null,
+    lastAlertTime:0,
+    fpsLast:performance.now(), fpsCount:0, fpsValue:0,
+    currentDetections:[],
+    videoW:0, videoH:0
+  };
+  const VEHICLE_CLASSES = ['car','truck','bus','motorcycle'];
+
+  const $ = (id)=>document.getElementById(id);
+  const video = $('video'), overlay = $('overlay'), viewfinder = $('viewfinder'), placeholder=$('placeholder');
+  const octx = overlay.getContext('2d');
+
+  /* ---------- clock ---------- */
+  function tickClock(){
+    const d = new Date();
+    $('clock').textContent = d.toLocaleTimeString('th-TH',{hour12:false});
+  }
+  setInterval(tickClock,1000); tickClock();
+
+  /* ---------- tabs ---------- */
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      $('tab-'+btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab==='stats') renderCharts();
+    });
+  });
+
+  /* ---------- traffic light ---------- */
+  function setLight(color){
+    state.trafficLight = color;
+    document.querySelectorAll('#lightToggleMini button, #lightToggleBig button').forEach(b=>{
+      b.classList.toggle('on', b.dataset.light===color);
+      b.classList.remove('red','green');
+      if(b.dataset.light===color) b.classList.add(color);
+    });
+    $('rdLight').textContent = color==='red' ? '🔴 แดง' : '🟢 เขียว';
+  }
+  document.querySelectorAll('#lightToggleMini button, #lightToggleBig button').forEach(b=>{
+    b.addEventListener('click',()=>setLight(b.dataset.light));
+  });
+  setLight('red');
+
+  /* ---------- camera device list ---------- */
+  async function refreshDeviceList(){
+    try{
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const sel = $('cfgCameraDevice');
+      const cams = devices.filter(d=>d.kind==='videoinput');
+      sel.innerHTML = '<option value="">-- เลือกกล้อง (อัตโนมัติ) --</option>' +
+        cams.map((c,i)=>`<option value="${c.deviceId}">${c.label || 'กล้อง '+(i+1)}</option>`).join('');
+    }catch(e){ /* ignore */ }
+  }
+  refreshDeviceList();
+
+  /* ---------- camera start/stop ---------- */
+  function setSystemStatus(mode){
+    const pill = $('systemStatus');
+    pill.classList.remove('live','alert');
+    if(mode==='live'){ pill.classList.add('live'); $('systemStatusText').textContent='กำลังตรวจจับ'; }
+    else if(mode==='alert'){ pill.classList.add('live','alert'); $('systemStatusText').textContent='แจ้งเตือน!'; }
+    else { $('systemStatusText').textContent='ไม่ได้ใช้งาน'; }
+  }
+
+  async function startCamera(){
+    if(state.running) return stopCamera();
+    const [w,h] = state.settings.resolution.split('x').map(Number);
+    const deviceId = $('cfgCameraDevice').value;
+    const constraints = { video:{ width:{ideal:w}, height:{ideal:h}, ...(deviceId?{deviceId:{exact:deviceId}}:{}) }, audio:false };
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.stream = stream;
+      video.srcObject = stream;
       await video.play();
-      beginLoop();
-    }
-
-    function beginLoop() {
+      placeholder.style.display='none';
       resizeCanvas();
-      $("empty").style.display = "none";
       state.running = true;
-      state.tracks.clear();
-      state.maxSpeed = 0;
-      state.lastTs = performance.now();
-      setStatus("กำลังตรวจจับ", "live");
+      $('btnCamera').textContent = '⏹ ปิดกล้อง';
+      $('btnCamera').classList.remove('primary');
+      $('btnCamera').classList.add('danger');
+      setSystemStatus('live');
+      refreshDeviceList();
+      ensureModel();
       requestAnimationFrame(loop);
+    }catch(err){
+      alert('ไม่สามารถเปิดกล้องได้: '+err.message+'\nโปรดตรวจสอบสิทธิ์การเข้าถึงกล้องของเบราว์เซอร์');
     }
+  }
+  function stopCamera(){
+    state.running = false;
+    if(state.stream){ state.stream.getTracks().forEach(t=>t.stop()); state.stream=null; }
+    video.srcObject = null;
+    placeholder.style.display='flex';
+    octx.clearRect(0,0,overlay.width,overlay.height);
+    $('btnCamera').textContent = '📷 เปิดกล้อง';
+    $('btnCamera').classList.add('primary');
+    $('btnCamera').classList.remove('danger');
+    setSystemStatus('off');
+    $('rdFps').textContent='--'; $('rdVehicles').textContent='0';
+    $('sumNow').textContent='0'; $('sumAcc').textContent='--%';
+    hideAlert();
+  }
+  $('btnCamera').addEventListener('click', startCamera);
 
-    function centerOf(box) {
-      return { x: box[0] + box[2] / 2, y: box[1] + box[3] / 2 };
+  function resizeCanvas(){
+    const rect = viewfinder.getBoundingClientRect();
+    overlay.width = rect.width; overlay.height = rect.height;
+    state.videoW = rect.width; state.videoH = rect.height;
+  }
+  window.addEventListener('resize', ()=>{ if(state.running) resizeCanvas(); });
+
+  async function ensureModel(){
+    if(state.model || state.modelLoading) return;
+    state.modelLoading = true;
+    $('systemStatusText').textContent='กำลังโหลดโมเดล…';
+    try{
+      state.model = await cocoSsd.load();
+    }catch(e){
+      console.error(e);
+      $('systemStatusText').textContent='โหลดโมเดลไม่สำเร็จ';
     }
+    state.modelLoading = false;
+    if(state.running) setSystemStatus('live');
+  }
 
-    function correctedDistance(pxDistance) {
-      const angle = Math.cos((cfg.roadAngle * Math.PI) / 180);
-      return (pxDistance * cfg.meterPerPixel) / Math.max(0.25, Math.abs(angle));
+  /* ---------- zone drawing (manual, with easy drag-to-adjust) ---------- */
+  let dragIdx = -1;
+  let hoverIdx = -1;
+  let rubberPoint = null;
+  const POINT_HIT_RADIUS = 12;
+
+  function setZoneMsg(text, kind){
+    const el = $('zoneMsg');
+    el.textContent = text||'';
+    el.className = 'zone-msg' + (kind?(' '+kind):'');
+  }
+
+  function getCanvasXY(e){
+    const rect = overlay.getBoundingClientRect();
+    return { x: e.clientX-rect.left, y: e.clientY-rect.top };
+  }
+  function findNearbyPointIndex(x,y,radius){
+    for(let i=0;i<state.zone.length;i++){
+      const p = state.zone[i];
+      if(Math.hypot(p.x-x, p.y-y) <= radius) return i;
     }
+    return -1;
+  }
+  function exitDrawMode(){
+    state.drawMode = false;
+    viewfinder.classList.remove('drawing');
+    $('btnDraw').classList.remove('active-toggle');
+    rubberPoint = null;
+  }
 
-    function matchTrack(det, dt) {
-      const c = centerOf(det.bbox);
-      let best = null;
-      let bestDist = Infinity;
-      for (const track of state.tracks.values()) {
-        if (track.class !== det.class) continue;
-        const d = Math.hypot(c.x - track.center.x, c.y - track.center.y);
-        if (d < bestDist && d < 90) {
-          best = track;
-          bestDist = d;
+  $('btnDraw').addEventListener('click',()=>{
+    state.drawMode = !state.drawMode;
+    viewfinder.classList.toggle('drawing', state.drawMode);
+    $('btnDraw').classList.toggle('active-toggle', state.drawMode);
+    if(state.drawMode){ state.zone = []; rubberPoint=null; setZoneMsg('คลิกบนภาพเพื่อวางจุด แล้วคลิกใกล้จุดแรกเพื่อปิดรูปทรง'); }
+    else { setZoneMsg(''); }
+  });
+  $('btnClearZone').addEventListener('click',()=>{ state.zone = []; setZoneMsg(''); });
+
+  overlay.addEventListener('pointerdown',(e)=>{
+    const {x,y} = getCanvasXY(e);
+    const idx = findNearbyPointIndex(x,y,POINT_HIT_RADIUS);
+    if(idx!==-1){
+      dragIdx = idx;
+      overlay.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+  });
+  overlay.addEventListener('pointermove',(e)=>{
+    const {x,y} = getCanvasXY(e);
+    if(dragIdx!==-1){
+      state.zone[dragIdx] = {x,y};
+      overlay.style.cursor = 'grabbing';
+      return;
+    }
+    hoverIdx = findNearbyPointIndex(x,y,POINT_HIT_RADIUS);
+    if(state.drawMode){
+      rubberPoint = {x,y};
+      overlay.style.cursor = (hoverIdx===0 && state.zone.length>=3) ? 'pointer' : 'crosshair';
+    } else {
+      overlay.style.cursor = hoverIdx!==-1 ? 'grab' : 'default';
+    }
+  });
+  function endDrag(e){
+    if(dragIdx!==-1){
+      dragIdx = -1;
+      overlay.style.cursor = 'grab';
+      return true;
+    }
+    return false;
+  }
+  overlay.addEventListener('pointerup',(e)=>{
+    if(endDrag(e)) return;
+    if(!state.drawMode) return;
+    const {x,y} = getCanvasXY(e);
+    if(state.zone.length>=3 && Math.hypot(x-state.zone[0].x, y-state.zone[0].y) <= POINT_HIT_RADIUS){
+      exitDrawMode();
+      setZoneMsg('✔ ปิดโซนแล้ว — ลากจุดเพื่อปรับแต่งเพิ่มเติมได้', 'ok');
+      return;
+    }
+    state.zone.push({x,y});
+  });
+  overlay.addEventListener('pointercancel', endDrag);
+
+  document.addEventListener('keydown',(e)=>{
+    if(!state.drawMode) return;
+    if(e.key==='Backspace'){ state.zone.pop(); e.preventDefault(); }
+    else if(e.key==='Escape'){ state.zone=[]; exitDrawMode(); setZoneMsg(''); }
+    else if(e.key==='Enter'){ if(state.zone.length>=3){ exitDrawMode(); setZoneMsg('✔ ปิดโซนแล้ว — ลากจุดเพื่อปรับแต่งเพิ่มเติมได้', 'ok'); } }
+  });
+
+  /* ---------- geometry ---------- */
+  function pointInPolygon(pt, poly){
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+      const intersect = ((yi>pt.y)!==(yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/((yj-yi)||1e-9)+xi);
+      if(intersect) inside=!inside;
+    }
+    return inside;
+  }
+
+  // Default / editable overlap function: samples a grid across the bbox
+  // and returns % of the box area that falls inside the zone polygon.
+  let checkOverlap = function(box, zonePolygon){
+    if(!zonePolygon || zonePolygon.length<3) return 0;
+    const [x,y,w,h] = box;
+    const GRID = 6;
+    let inside=0, total=0;
+    for(let i=0;i<GRID;i++){
+      for(let j=0;j<GRID;j++){
+        const px = x + (w*(i+0.5))/GRID;
+        const py = y + (h*(j+0.5))/GRID;
+        total++;
+        if(pointInPolygon({x:px,y:py}, zonePolygon)) inside++;
+      }
+    }
+    return total? (inside/total)*100 : 0;
+  };
+  const DEFAULT_OVERLAP_SRC =
+`function checkOverlap(box, zonePolygon) {
+  // box = [x, y, width, height] in canvas pixels
+  // zonePolygon = [{x,y}, ...] points of the drawn crossing zone
+  if (!zonePolygon || zonePolygon.length < 3) return 0;
+  const [x, y, w, h] = box;
+  const GRID = 6;
+  let inside = 0, total = 0;
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      const px = x + (w * (i + 0.5)) / GRID;
+      const py = y + (h * (j + 0.5)) / GRID;
+      total++;
+      if (pointInPolygon({ x: px, y: py }, zonePolygon)) inside++;
+    }
+  }
+  return total ? (inside / total) * 100 : 0;
+}`;
+
+  const DEFAULT_OVERLAP_CPP =
+`#include <iostream>
+using namespace std;
+
+// stdin format:  x y w h
+//                n
+//                x1 y1 x2 y2 ... xn yn   (n zone polygon points)
+// stdout:        overlap percentage (0-100)
+
+bool pointInPolygon(double px, double py, double* zx, double* zy, int n) {
+    bool inside = false;
+    int j = n - 1;
+    for (int i = 0; i < n; i++) {
+        if (((zy[i] > py) != (zy[j] > py)) &&
+            (px < (zx[j] - zx[i]) * (py - zy[i]) / (zy[j] - zy[i] + 1e-9) + zx[i])) {
+            inside = !inside;
         }
+        j = i;
+    }
+    return inside;
+}
+
+int main() {
+    double x, y, w, h;
+    cin >> x >> y >> w >> h;
+    int n;
+    cin >> n;
+    double zx[64], zy[64];
+    for (int i = 0; i < n; i++) cin >> zx[i] >> zy[i];
+
+    int GRID = 6;
+    int inside = 0, total = 0;
+    for (int i = 0; i < GRID; i++) {
+        for (int j = 0; j < GRID; j++) {
+            double px = x + (w * (i + 0.5)) / GRID;
+            double py = y + (h * (j + 0.5)) / GRID;
+            total++;
+            if (pointInPolygon(px, py, zx, zy, n)) inside++;
+        }
+    }
+    double result = total ? (100.0 * inside / total) : 0.0;
+    cout << result << endl;
+    return 0;
+}`;
+
+  const codeState = {
+    lang: 'js',
+    jsSrc: DEFAULT_OVERLAP_SRC,
+    cppSrc: DEFAULT_OVERLAP_CPP,
+    activeMode: 'js', // which implementation actually runs in the detection loop
+    cppSource: DEFAULT_OVERLAP_CPP
+  };
+  $('codeArea').value = codeState.jsSrc;
+
+  function stringifyOverlapInput(box, zonePolygon){
+    const [x,y,w,h] = box;
+    const n = zonePolygon.length;
+    return `${x} ${y} ${w} ${h}\n${n}\n` + zonePolygon.map(p=>`${p.x} ${p.y}`).join(' ') + '\n';
+  }
+  function runCppOverlap(cppSrc, box, zonePolygon){
+    if(typeof JSCPP==='undefined') throw new Error('ไลบรารี JSCPP ยังโหลดไม่เสร็จ (ต้องใช้อินเทอร์เน็ต)');
+    let output = '';
+    const exitCode = JSCPP.run(cppSrc, stringifyOverlapInput(box, zonePolygon), {
+      stdio: { write: (s)=>{ output += s; } }
+    });
+    const val = parseFloat(output.trim().split(/\s+/).pop());
+    if(Number.isNaN(val)) throw new Error('อ่านค่าผลลัพธ์จากโปรแกรม C++ ไม่ได้ (คาดว่า cout ตัวเลขหนึ่งค่า)');
+    return val;
+  }
+  function checkOverlapCpp(box, zonePolygon){
+    if(!zonePolygon || zonePolygon.length<3) return 0;
+    try{
+      return runCppOverlap(codeState.cppSource, box, zonePolygon);
+    }catch(e){
+      console.warn('C++ overlap error:', e.message);
+      return 0;
+    }
+  }
+  function callOverlap(box, zonePolygon){
+    return codeState.activeMode==='cpp' ? checkOverlapCpp(box, zonePolygon) : checkOverlap(box, zonePolygon);
+  }
+
+  document.querySelectorAll('#codeLangSeg button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(b.dataset.codelang===codeState.lang) return;
+      // stash current textarea content into the language we're leaving
+      codeState[codeState.lang+'Src'] = $('codeArea').value;
+      codeState.lang = b.dataset.codelang;
+      $('codeArea').value = codeState[codeState.lang+'Src'];
+      document.querySelectorAll('#codeLangSeg button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      $('codeMsg').textContent = codeState.activeMode===codeState.lang
+        ? '● กำลังใช้งานโค้ดภาษานี้อยู่ในระบบตรวจจับ' : '';
+      $('codeMsg').className = 'code-msg';
+    });
+  });
+
+  $('btnApplyCode').addEventListener('click',()=>{
+    const msg = $('codeMsg');
+    const src = $('codeArea').value;
+    codeState[codeState.lang+'Src'] = src;
+    if(codeState.lang==='js'){
+      try{
+        const factory = new Function('pointInPolygon', `"use strict"; ${src}; return checkOverlap;`);
+        const fn = factory(pointInPolygon);
+        if(typeof fn!=='function') throw new Error('ไม่พบฟังก์ชัน checkOverlap');
+        fn([0,0,10,10], [{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]); // sanity call
+        checkOverlap = fn;
+        codeState.activeMode = 'js';
+        msg.textContent = '✔ ใช้งานฟังก์ชัน JavaScript ใหม่แล้ว'; msg.className='code-msg ok';
+      }catch(err){
+        msg.textContent = '✘ ข้อผิดพลาด: '+err.message; msg.className='code-msg err';
       }
-      if (!best) {
-        best = { id: state.nextId++, class: det.class, center: c, speed: 0, lastSeen: performance.now(), warnedSpeed: false, warnedHelmet: false };
-        state.tracks.set(best.id, best);
-      } else if (dt > 0) {
-        const meters = correctedDistance(bestDist);
-        const speed = (meters / dt) * 3.6;
-        best.speed = best.speed * 0.65 + speed * 0.35;
-        best.center = c;
-        best.lastSeen = performance.now();
-      }
-      return best;
-    }
-
-    function overlap(a, b) {
-      const x1 = Math.max(a[0], b[0]);
-      const y1 = Math.max(a[1], b[1]);
-      const x2 = Math.min(a[0] + a[2], b[0] + b[2]);
-      const y2 = Math.min(a[1] + a[3], b[1] + b[3]);
-      return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-    }
-
-    function estimateHelmet(motorcycle, people) {
-      const rider = people.find((p) => overlap(motorcycle.bbox, p.bbox) > motorcycle.bbox[2] * motorcycle.bbox[3] * 0.04);
-      if (!rider) return { label: "ไม่พบผู้ขับขี่", ok: false, confidence: 0.35 };
-      const headY = rider.bbox[1] + rider.bbox[3] * 0.16;
-      const headNearTop = headY < motorcycle.bbox[1] + motorcycle.bbox[3] * 0.45;
-      return headNearTop
-        ? { label: "คาดว่าใส่หมวก", ok: true, confidence: 0.58 }
-        : { label: "ไม่สวมหมวก", ok: false, confidence: 0.55 };
-    }
-
-    async function detectHelmetsWithCustomModel() {
-      if (!state.helmetModel) {
-        try { await loadHelmetModel(); } catch (err) { console.warn(err); }
-      }
-      return [];
-    }
-
-    function brakingDistance(speedKmh) {
-      const v = speedKmh / 3.6;
-      const reaction = v * cfg.reactionTime;
-      const brake = (v * v) / (2 * cfg.friction * 9.81);
-      return { reaction, brake, total: reaction + brake };
-    }
-
-    function addLog(type, text, level = "warn") {
-      const time = new Date().toLocaleTimeString("th-TH", { hour12: false });
-      state.logs.unshift({ time, type, text, level });
-      state.logs = state.logs.slice(0, 40);
-      $("alertCount").textContent = state.logs.length;
-      renderLog();
-    }
-
-    function renderLog() {
-      $("log").innerHTML = state.logs.length
-        ? state.logs.map((l) => `<li><span class="${l.level === "danger" ? "danger-text" : "warn-text"}">${l.type}: ${l.text}</span><span>${l.time}</span></li>`).join("")
-        : `<li><span>ยังไม่มีเหตุการณ์</span><span>-</span></li>`;
-    }
-
-    function drawBox(det, track, helmet) {
-      const [x, y, w, h] = det.bbox;
-      const over = track.speed >= cfg.speedLimit;
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = over ? "#ff5a4f" : det.class === "motorcycle" ? "#facc15" : "#38bdf8";
-      ctx.strokeRect(x, y, w, h);
-      const helmetText = helmet ? ` | ${helmet.label}` : "";
-      const label = `#${track.id} ${det.class} ${Math.round(track.speed)} km/h${helmetText}`;
-      ctx.font = "12px IBM Plex Mono, monospace";
-      const tw = ctx.measureText(label).width + 12;
-      ctx.fillStyle = over || (helmet && !helmet.ok) ? "rgba(255,90,79,.92)" : "rgba(56,189,248,.92)";
-      ctx.fillRect(x, Math.max(0, y - 22), Math.min(tw, stage.clientWidth - x), 22);
-      ctx.fillStyle = "#071016";
-      ctx.fillText(label, x + 6, Math.max(14, y - 7));
-    }
-
-    function drawCalibration() {
-      if (state.calibPoints.length === 0) return;
-      ctx.strokeStyle = "#3ddc97";
-      ctx.fillStyle = "#3ddc97";
-      ctx.lineWidth = 2;
-      state.calibPoints.forEach((p) => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      if (state.calibPoints.length === 2) {
-        const [a, b] = state.calibPoints;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+    } else {
+      try{
+        const testResult = runCppOverlap(src, [0,0,10,10], [{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]);
+        if(typeof testResult!=='number' || Number.isNaN(testResult)) throw new Error('โปรแกรมไม่คืนค่าตัวเลขที่ถูกต้อง');
+        codeState.cppSource = src;
+        codeState.activeMode = 'cpp';
+        msg.textContent = `✔ คอมไพล์/รัน C++ สำเร็จ (ทดสอบได้ ${testResult.toFixed(1)}%) — ใช้งานแล้ว`; msg.className='code-msg ok';
+      }catch(err){
+        msg.textContent = '✘ ข้อผิดพลาดในโค้ด C++: '+err.message; msg.className='code-msg err';
       }
     }
+  });
+  $('btnResetCode').addEventListener('click',()=>{
+    const msg = $('codeMsg');
+    if(codeState.lang==='js'){
+      codeState.jsSrc = DEFAULT_OVERLAP_SRC;
+      $('codeArea').value = DEFAULT_OVERLAP_SRC;
+      const factory = new Function('pointInPolygon', `"use strict"; ${DEFAULT_OVERLAP_SRC}; return checkOverlap;`);
+      checkOverlap = factory(pointInPolygon);
+      codeState.activeMode = 'js';
+      msg.textContent = '↩ กลับสู่ค่าเริ่มต้น (JavaScript) แล้ว'; msg.className='code-msg ok';
+    } else {
+      codeState.cppSrc = DEFAULT_OVERLAP_CPP;
+      codeState.cppSource = DEFAULT_OVERLAP_CPP;
+      $('codeArea').value = DEFAULT_OVERLAP_CPP;
+      codeState.activeMode = 'cpp';
+      msg.textContent = '↩ กลับสู่ค่าเริ่มต้น (C++) แล้ว'; msg.className='code-msg ok';
+    }
+  });
+  $('btnExportJs').addEventListener('click',()=>{
+    const ext = codeState.lang==='cpp' ? 'cpp' : 'js';
+    const mime = codeState.lang==='cpp' ? 'text/x-c++src' : 'text/javascript';
+    downloadBlob(new Blob([$('codeArea').value],{type:mime}), 'checkOverlap.'+ext);
+  });
 
-    async function loop(ts) {
-      if (!state.running) return;
-      const dt = Math.max(0.001, (ts - state.lastTs) / 1000);
-      state.lastTs = ts;
-      ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
-      drawCalibration();
+  /* ---------- automatic zone detection ---------- */
+  function otsuThreshold(hist, total){
+    let sum=0; for(let t=0;t<256;t++) sum+=t*hist[t];
+    let sumB=0, wB=0, wF=0, varMax=-1, threshold=140;
+    for(let t=0;t<256;t++){
+      wB+=hist[t]; if(wB===0) continue;
+      wF=total-wB; if(wF===0) break;
+      sumB+=t*hist[t];
+      const mB=sumB/wB, mF=(sum-sumB)/wF;
+      const varBetween = wB*wF*(mB-mF)*(mB-mF);
+      if(varBetween>varMax){ varMax=varBetween; threshold=t; }
+    }
+    return threshold;
+  }
+  function convexHull(points){
+    const pts = points.slice().sort((a,b)=> a.x-b.x || a.y-b.y);
+    if(pts.length<3) return pts;
+    const cross=(o,a,b)=> (a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+    const lower=[];
+    for(const p of pts){
+      while(lower.length>=2 && cross(lower[lower.length-2], lower[lower.length-1], p)<=0) lower.pop();
+      lower.push(p);
+    }
+    const upper=[];
+    for(let i=pts.length-1;i>=0;i--){
+      const p=pts[i];
+      while(upper.length>=2 && cross(upper[upper.length-2], upper[upper.length-1], p)<=0) upper.pop();
+      upper.push(p);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
 
-      if (video.readyState >= 2 && state.model) {
-        const sx = stage.clientWidth / video.videoWidth;
-        const sy = stage.clientHeight / video.videoHeight;
-        const predictions = await state.model.detect(video);
-        const people = predictions.filter((p) => p.class === "person" && p.score >= cfg.confidence)
-          .map((p) => ({ ...p, bbox: [p.bbox[0] * sx, p.bbox[1] * sy, p.bbox[2] * sx, p.bbox[3] * sy] }));
-        const vehicles = predictions.filter((p) => VEHICLES.has(p.class) && p.score >= cfg.confidence)
-          .map((p) => ({ ...p, bbox: [p.bbox[0] * sx, p.bbox[1] * sy, p.bbox[2] * sx, p.bbox[3] * sy] }));
+  // Analyzes the current frame for bright, wide, stripe-like blobs (zebra
+  // markings) in the lower part of the image and wraps them in a polygon.
+  function detectZebraZone(){
+    const AW = 220;
+    const AH = Math.max(60, Math.round(AW * (overlay.height/overlay.width)));
+    const ac = document.createElement('canvas'); ac.width=AW; ac.height=AH;
+    const actx = ac.getContext('2d', {willReadFrequently:true});
+    actx.drawImage(video, 0, 0, AW, AH);
+    const data = actx.getImageData(0,0,AW,AH).data;
 
-        let helmetOk = 0;
-        let topSpeed = 0;
-        for (const det of vehicles) {
-          const track = matchTrack(det, dt);
-          topSpeed = Math.max(topSpeed, track.speed);
-          let helmet = null;
-          if (det.class === "motorcycle") {
-            helmet = state.helmetMode === "custom" ? null : estimateHelmet(det, people);
-            if (helmet && helmet.ok) helmetOk++;
-            if (helmet && !helmet.ok && !track.warnedHelmet) {
-              track.warnedHelmet = true;
-              addLog("หมวกกันน็อค", `รถ #${track.id} ${helmet.label}`, "danger");
-            }
+    const yTop = Math.floor(AH*0.30); // skip sky / far background
+    const gray = new Float32Array(AW*AH);
+    for(let i=0;i<AW*AH;i++){
+      gray[i] = 0.299*data[i*4] + 0.587*data[i*4+1] + 0.114*data[i*4+2];
+    }
+    const hist = new Array(256).fill(0);
+    let total=0;
+    for(let y=yTop;y<AH;y++) for(let x=0;x<AW;x++){ hist[Math.round(gray[y*AW+x])]++; total++; }
+    const thresh = Math.max(otsuThreshold(hist,total), 95);
+
+    const mask = new Uint8Array(AW*AH);
+    for(let y=yTop;y<AH;y++) for(let x=0;x<AW;x++){
+      const idx=y*AW+x;
+      mask[idx] = gray[idx] > thresh ? 1 : 0;
+    }
+
+    const visited = new Uint8Array(AW*AH);
+    const comps = [];
+    for(let y=yTop;y<AH;y++){
+      for(let x=0;x<AW;x++){
+        const start=y*AW+x;
+        if(!mask[start] || visited[start]) continue;
+        const stack=[start]; visited[start]=1;
+        const pts=[]; let minX=x,maxX=x,minY=y,maxY=y;
+        while(stack.length){
+          const cur=stack.pop();
+          const cx=cur%AW, cy=(cur-cx)/AW;
+          pts.push({x:cx,y:cy});
+          if(cx<minX)minX=cx; if(cx>maxX)maxX=cx; if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
+          const cand=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
+          for(const [nx,ny] of cand){
+            if(nx<0||nx>=AW||ny<yTop||ny>=AH) continue;
+            const n=ny*AW+nx;
+            if(mask[n] && !visited[n]){ visited[n]=1; stack.push(n); }
           }
-          if (track.speed >= cfg.speedLimit && !track.warnedSpeed) {
-            track.warnedSpeed = true;
-            addLog("ความเร็ว", `รถ #${track.id} ${Math.round(track.speed)} km/h เกิน ${cfg.speedLimit} km/h`, "danger");
-          }
-          drawBox(det, track, helmet);
         }
+        comps.push({pts,minX,maxX,minY,maxY});
+      }
+    }
 
-        const now = performance.now();
-        for (const [id, track] of state.tracks) {
-          if (now - track.lastSeen > 1500) state.tracks.delete(id);
+    // keep sizeable, wide (stripe-like) blobs — zebra bars are wider than they are tall
+    const stripes = comps.filter(c=>{
+      const w=c.maxX-c.minX+1, h=c.maxY-c.minY+1;
+      return c.pts.length>=7 && w>=3 && (w/h)>=0.7;
+    });
+    if(stripes.length===0) return null;
+    const totalArea = stripes.reduce((a,c)=>a+c.pts.length,0);
+    if(stripes.length<2 && totalArea < AW*AH*0.012) return null;
+
+    let allPts = [];
+    stripes.forEach(c=>allPts.push(...c.pts));
+    if(allPts.length>3500){
+      const step = Math.ceil(allPts.length/3500);
+      allPts = allPts.filter((_,i)=>i%step===0);
+    }
+    const hull = convexHull(allPts);
+    if(hull.length<3) return null;
+
+    const sx = overlay.width/AW, sy = overlay.height/AH;
+    const cx0 = hull.reduce((a,p)=>a+p.x,0)/hull.length;
+    const cy0 = hull.reduce((a,p)=>a+p.y,0)/hull.length;
+    const PAD = 1.08; // small outward padding so the zone comfortably covers the stripes
+    return hull.map(p=>({
+      x:(cx0+(p.x-cx0)*PAD)*sx,
+      y:(cy0+(p.y-cy0)*PAD)*sy
+    }));
+  }
+
+  function autoDetectZone(){
+    if(!state.running){ setZoneMsg('✘ กรุณาเปิดกล้องก่อน', 'err'); return; }
+    exitDrawMode();
+    setZoneMsg('กำลังวิเคราะห์ภาพหาลายทางม้าลาย…');
+    $('btnAutoZone').disabled = true;
+    requestAnimationFrame(()=> requestAnimationFrame(()=>{
+      try{
+        const result = detectZebraZone();
+        if(result && result.length>=3){
+          state.zone = result;
+          setZoneMsg(`✔ ตรวจพบโซนอัตโนมัติ (${result.length} จุด) — ลากจุดสีเหลืองเพื่อปรับแต่งเพิ่มเติมได้`, 'ok');
+        } else {
+          setZoneMsg('✘ ไม่พบลายทางม้าลายที่ชัดเจนในภาพ ลองปรับมุมกล้อง/แสง หรือกด "วาดโซนเอง" แทน', 'err');
         }
-
-        state.maxSpeed = Math.max(state.maxSpeed * 0.9, topSpeed);
-        $("speedNow").textContent = Math.round(topSpeed);
-        $("vehicleCount").textContent = vehicles.length;
-        $("helmetCount").textContent = helmetOk;
-        setStatus(vehicles.some((d) => {
-          const t = [...state.tracks.values()].find((track) => track.class === d.class);
-          return t && t.speed >= cfg.speedLimit;
-        }) ? "พบเหตุการณ์เตือน" : "กำลังตรวจจับ", vehicles.some((d) => {
-          const t = [...state.tracks.values()].find((track) => track.class === d.class);
-          return t && t.speed >= cfg.speedLimit;
-        }) ? "alert" : "live");
+      }catch(err){
+        setZoneMsg('✘ เกิดข้อผิดพลาดระหว่างตรวจจับอัตโนมัติ', 'err');
       }
-      renderPhysics();
-      requestAnimationFrame(loop);
+      $('btnAutoZone').disabled = false;
+    }));
+  }
+  $('btnAutoZone').addEventListener('click', autoDetectZone);
+
+  /* ---------- detection loop ---------- */
+  function drawZone(){
+    if(state.zone.length===0) return;
+    octx.beginPath();
+    state.zone.forEach((p,i)=> i===0?octx.moveTo(p.x,p.y):octx.lineTo(p.x,p.y));
+    if(!state.drawMode) octx.closePath();
+    octx.strokeStyle = 'rgba(255,197,61,.9)';
+    octx.lineWidth = 2;
+    octx.stroke();
+    if(state.settings.showZone && !state.drawMode && state.zone.length>=3){
+      octx.fillStyle = 'rgba(255,197,61,.15)';
+      octx.fill();
     }
-
-    function bindRange(id, key, outId, fmt) {
-      const el = $(id);
-      const update = () => {
-        cfg[key] = Number(el.value);
-        $(outId).textContent = fmt(cfg[key]);
-        renderPhysics();
-      };
-      el.addEventListener("input", update);
-      update();
+    // live rubber-band line to cursor while drawing
+    if(state.drawMode && rubberPoint && state.zone.length>0){
+      const last = state.zone[state.zone.length-1];
+      octx.beginPath();
+      octx.setLineDash([5,4]);
+      octx.moveTo(last.x,last.y); octx.lineTo(rubberPoint.x,rubberPoint.y);
+      octx.strokeStyle = 'rgba(255,197,61,.55)';
+      octx.lineWidth = 1.5;
+      octx.stroke();
+      octx.setLineDash([]);
     }
+    const closeTarget = state.drawMode && state.zone.length>=3 && rubberPoint &&
+      Math.hypot(rubberPoint.x-state.zone[0].x, rubberPoint.y-state.zone[0].y) <= POINT_HIT_RADIUS;
+    state.zone.forEach((p,i)=>{
+      const isFirst = i===0;
+      const big = (isFirst && closeTarget) || i===dragIdx || i===hoverIdx;
+      octx.beginPath(); octx.arc(p.x,p.y, big?7:4.5, 0, Math.PI*2);
+      octx.fillStyle = (isFirst && closeTarget) ? '#35d07f' : '#ffc53d';
+      octx.fill();
+      octx.lineWidth = 1.5; octx.strokeStyle = '#0a0c0f'; octx.stroke();
+    });
+  }
 
-    function renderPhysics() {
-      const speed = Number($("speedNow").textContent) || cfg.speedLimit;
-      const b = brakingDistance(speed);
-      $("physicsBox").textContent =
-`v = s / t
-speed = ${(speed / 3.6).toFixed(2)} m/s = ${Math.round(speed)} km/h
-stopping = reaction + braking
-reaction = ${b.reaction.toFixed(1)} m
-braking = ${b.brake.toFixed(1)} m
-total stop = ${b.total.toFixed(1)} m`;
+  function drawBox(det, overlapPct, violating){
+    if(!state.settings.showBox) return;
+    const [x,y,w,h] = det.bbox;
+    octx.lineWidth = state.settings.boxWidth;
+    octx.strokeStyle = violating ? '#ff4438' : '#34d2ff';
+    octx.strokeRect(x,y,w,h);
+    if(state.settings.showLabel){
+      const label = `${det.class} ${(det.score*100).toFixed(0)}%${state.zone.length>=3?' · '+overlapPct.toFixed(0)+'%':''}`;
+      octx.font = '11px "IBM Plex Mono", monospace';
+      const tw = octx.measureText(label).width+10;
+      octx.fillStyle = violating ? 'rgba(255,68,56,.9)' : 'rgba(52,210,255,.85)';
+      octx.fillRect(x, Math.max(0,y-18), tw, 18);
+      octx.fillStyle = '#08131a';
+      octx.fillText(label, x+5, Math.max(12,y-5));
     }
+  }
 
-    canvas.addEventListener("click", (event) => {
-      if (!state.calibrating) return;
-      const rect = canvas.getBoundingClientRect();
-      state.calibPoints.push({ x: event.clientX - rect.left, y: event.clientY - rect.top });
-      if (state.calibPoints.length === 2) {
-        const [a, b] = state.calibPoints;
-        const px = Math.hypot(a.x - b.x, a.y - b.y);
-        cfg.meterPerPixel = cfg.calibMeters / Math.max(1, px);
-        $("meterPerPixel").value = Math.min(0.2, Math.max(0.005, cfg.meterPerPixel));
-        $("mppOut").textContent = cfg.meterPerPixel.toFixed(3);
-        state.calibrating = false;
-        $("hint").textContent = `คาลิเบรตแล้ว: ${cfg.calibMeters} เมตร / ${Math.round(px)} px`;
-      }
-    });
+  function showAlert(on){
+    $('alertBanner').classList.toggle('show', on);
+    $('rdAlertText').style.display = on?'inline':'none';
+    setSystemStatus(on?'alert':(state.running?'live':'off'));
+  }
+  function hideAlert(){ showAlert(false); }
 
-    $("cameraBtn").addEventListener("click", startCamera);
-    $("videoFile").addEventListener("change", (e) => useVideoFile(e.target.files[0]));
-    $("calibrateBtn").addEventListener("click", () => {
-      state.calibrating = true;
-      state.calibPoints = [];
-      $("hint").textContent = "คลิกบนภาพ 2 จุดที่รู้ระยะจริง เช่น ความยาวเส้นถนนหรือระยะหลักเมตร";
-    });
-    $("resetTracksBtn").addEventListener("click", () => {
-      state.tracks.clear();
-      state.logs = [];
-      state.nextId = 1;
-      renderLog();
-      $("alertCount").textContent = "0";
-    });
-    $("exportBtn").addEventListener("click", () => {
-      const csv = "time,type,detail,level\n" + state.logs.map((l) => `"${l.time}","${l.type}","${l.text}","${l.level}"`).join("\n");
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "vehicle_speed_helmet_events.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-    $("helmetMode").addEventListener("click", async (event) => {
-      const btn = event.target.closest("button");
-      if (!btn) return;
-      document.querySelectorAll("#helmetMode button").forEach((b) => b.classList.remove("on"));
-      btn.classList.add("on");
-      state.helmetMode = btn.dataset.mode;
-      if (state.helmetMode === "custom") await detectHelmetsWithCustomModel();
-    });
+  function speak(text){
+    if(!state.soundOn) return;
+    try{
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = state.settings.lang; u.rate = state.settings.rate;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }catch(e){/*ignore*/}
+  }
 
-    bindRange("confidence", "confidence", "confOut", (v) => v.toFixed(2));
-    bindRange("speedLimit", "speedLimit", "limitOut", (v) => `${v} km/h`);
-    bindRange("calibMeters", "calibMeters", "calibOut", (v) => `${v.toFixed(1)} m`);
-    bindRange("meterPerPixel", "meterPerPixel", "mppOut", (v) => v.toFixed(3));
-    bindRange("roadAngle", "roadAngle", "angleOut", (v) => `${v}°`);
-    bindRange("friction", "friction", "frictionOut", (v) => v.toFixed(2));
-    bindRange("reactionTime", "reactionTime", "reactionOut", (v) => `${v.toFixed(1)} s`);
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+  function captureFrame(){
+    const c = document.createElement('canvas');
+    c.width = overlay.width; c.height = overlay.height;
+    const cx = c.getContext('2d');
+    cx.drawImage(video,0,0,c.width,c.height);
+    cx.drawImage(overlay,0,0);
+    return c.toDataURL('image/jpeg',0.85);
+  }
+
+  function logViolation(rec){
+    state.violations.unshift(rec);
     renderLog();
-  </script>
+    updateSummary();
+  }
+  function addPhoto(dataUrl){
+    const rec = {id:Date.now()+Math.random(), time:Date.now(), dataUrl};
+    state.photos.unshift(rec);
+    renderPhotos();
+  }
+
+  function loop(ts){
+    if(!state.running) return;
+    if(video.readyState>=2 && overlay.width>0){
+      octx.clearRect(0,0,overlay.width,overlay.height);
+      drawZone();
+
+      // fps
+      state.fpsCount++;
+      if(ts-state.fpsLast>=1000){ state.fpsValue=state.fpsCount; state.fpsCount=0; state.fpsLast=ts; $('rdFps').textContent=state.fpsValue; }
+
+      if(state.model){
+        const sx = overlay.width/video.videoWidth, sy = overlay.height/video.videoHeight;
+        state.model.detect(video).then(preds=>{
+          const dets = preds.filter(p=>VEHICLE_CLASSES.includes(p.class) && p.score>=state.settings.confidence)
+            .map(p=>({class:p.class, score:p.score, bbox:[p.bbox[0]*sx, p.bbox[1]*sy, p.bbox[2]*sx, p.bbox[3]*sy]}));
+          state.currentDetections = dets;
+          $('rdVehicles').textContent = dets.length;
+          $('sumNow').textContent = dets.length;
+          $('sumAcc').textContent = dets.length? Math.round(dets.reduce((a,d)=>a+d.score,0)/dets.length*100)+'%' : '--%';
+
+          let maxOverlap = 0, violatingNow=false, bestDet=null;
+          dets.forEach(det=>{
+            const ov = state.zone.length>=3 ? callOverlap(det.bbox, state.zone) : 0;
+            const violating = ov>=state.settings.overlapPct && state.trafficLight==='red';
+            if(ov>maxOverlap){ maxOverlap=ov; bestDet=det; }
+            if(violating) violatingNow=true;
+            drawBox(det, ov, violating);
+          });
+
+          $('sumZone').textContent = state.zone.length>=3 ? (violatingNow?'ผิด':'ปกติ') : 'ยังไม่วาด';
+
+          const now = Date.now();
+          if(violatingNow){
+            if(!state.activeViolation) state.activeViolation = {start:now, last:now, conf:bestDet?bestDet.score:0};
+            state.activeViolation.last = now;
+            state.activeViolation.conf = Math.max(state.activeViolation.conf, bestDet?bestDet.score:0);
+            state.activeViolation.overlap = maxOverlap;
+            const elapsed = now - state.activeViolation.start;
+            if(elapsed >= state.settings.delaySec*1000){
+              showAlert(true);
+              if(now - state.lastAlertTime >= state.settings.interval*1000){
+                state.lastAlertTime = now;
+                speak(state.settings.alertText);
+                if(state.settings.autoCapture){
+                  const shot = captureFrame();
+                  addPhoto(shot);
+                  state.activeViolation.photo = shot;
+                }
+              }
+            }
+          } else if(state.activeViolation){
+            const elapsedTotal = state.activeViolation.last - state.activeViolation.start;
+            if(elapsedTotal >= state.settings.delaySec*1000){
+              logViolation({
+                id: Date.now()+Math.random(),
+                time: state.activeViolation.start,
+                duration: Math.round(elapsedTotal/1000),
+                overlap: Math.round(state.activeViolation.overlap||0),
+                confidence: Math.round((state.activeViolation.conf||0)*100)
+              });
+            }
+            state.activeViolation = null;
+            showAlert(false);
+          }
+        }).catch(()=>{});
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------- log / stats rendering ---------- */
+  function fmtTime(ms){ return new Date(ms).toLocaleTimeString('th-TH',{hour12:false}); }
+  function fmtDate(ms){ return new Date(ms).toLocaleDateString('th-TH'); }
+
+  function renderLog(){
+    const list = $('logList');
+    if(state.violations.length===0){ list.innerHTML='<li class="log-empty">ยังไม่มีเหตุการณ์</li>'; return; }
+    list.innerHTML = state.violations.slice(0,25).map(v=>
+      `<li><span><b>ละเมิด</b> ${fmtTime(v.time)}</span><span>${v.duration}s · ${v.overlap}%</span></li>`
+    ).join('');
+  }
+  $('btnClearLog').addEventListener('click',()=>{ state.violations=[]; renderLog(); updateSummary(); renderCharts(); });
+
+  function updateSummary(){
+    $('sumTotal').textContent = state.violations.length;
+    $('statTotal').textContent = state.violations.length;
+    const todayStr = new Date().toDateString();
+    const todayCount = state.violations.filter(v=>new Date(v.time).toDateString()===todayStr).length;
+    $('statToday').textContent = todayCount;
+
+    // max per hour (today)
+    const hourBins = new Array(24).fill(0);
+    state.violations.filter(v=>new Date(v.time).toDateString()===todayStr).forEach(v=>{
+      hourBins[new Date(v.time).getHours()]++;
+    });
+    $('statMaxHour').innerHTML = Math.max(0,...hourBins) + '<small> เหตุการณ์/ชม.</small>';
+    let commonHour=-1, commonCount=0;
+    hourBins.forEach((c,h)=>{ if(c>commonCount){commonCount=c; commonHour=h;} });
+    $('statCommonTime').textContent = commonHour>=0 ? String(commonHour).padStart(2,'0')+':00' : '--:--';
+
+    // recent table
+    const tbody = document.querySelector('#recentTable tbody');
+    if(state.violations.length===0){
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-faint); font-family:var(--font-th);">ยังไม่มีข้อมูล</td></tr>';
+    } else {
+      tbody.innerHTML = state.violations.slice(0,10).map(v=>
+        `<tr><td>${fmtDate(v.time)} ${fmtTime(v.time)}</td><td class="dur">${v.duration}</td><td>${v.overlap}%</td><td>${v.confidence}%</td></tr>`
+      ).join('');
+    }
+  }
+
+  function renderPhotos(){
+    $('photoCount').textContent = `(${state.photos.length} ภาพ)`;
+    $('photoEmpty').style.display = state.photos.length? 'none':'block';
+    const grid = $('photoGrid');
+    grid.innerHTML = state.photos.map(p=>
+      `<div class="photo-cell" data-src="${p.dataUrl}"><img src="${p.dataUrl}" alt="violation"><div class="tag">${fmtTime(p.time)}</div></div>`
+    ).join('');
+    grid.querySelectorAll('.photo-cell').forEach(cell=>{
+      cell.addEventListener('click',()=>{ $('modalImg').src = cell.dataset.src; $('modalBg').classList.add('show'); });
+    });
+  }
+  $('modalBg').addEventListener('click',()=>$('modalBg').classList.remove('show'));
+  $('btnClearPhotos').addEventListener('click',()=>{ state.photos=[]; renderPhotos(); });
+  $('btnDownloadAll').addEventListener('click', async ()=>{
+    if(state.photos.length===0) return;
+    if(typeof JSZip==='undefined'){ alert('ไม่สามารถโหลด JSZip ได้ กรุณาเชื่อมต่ออินเทอร์เน็ต'); return; }
+    const zip = new JSZip();
+    state.photos.forEach((p,i)=>{
+      const b64 = p.dataUrl.split(',')[1];
+      zip.file(`violation_${i+1}_${p.id}.jpg`, b64, {base64:true});
+    });
+    const blob = await zip.generateAsync({type:'blob'});
+    downloadBlob(blob, 'violation_photos.zip');
+  });
+
+  /* ---------- charts (lightweight canvas bar charts) ---------- */
+  function drawBarChart(canvas, labels, values, color){
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio||1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width*dpr; canvas.height = 180*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const W = rect.width, H = 180;
+    ctx.clearRect(0,0,W,H);
+    const max = Math.max(1,...values);
+    const padL=26, padB=20, padT=8;
+    const barAreaW = W-padL-6, barAreaH = H-padB-padT;
+    const bw = barAreaW/values.length;
+    ctx.strokeStyle='#262c34'; ctx.beginPath(); ctx.moveTo(padL,padT); ctx.lineTo(padL,H-padB); ctx.lineTo(W-2,H-padB); ctx.stroke();
+    ctx.fillStyle='#565e68'; ctx.font='9px "IBM Plex Mono",monospace';
+    ctx.fillText(String(max), 2, padT+8);
+    values.forEach((v,i)=>{
+      const h = (v/max)*barAreaH;
+      const x = padL + i*bw + bw*0.15;
+      const w = bw*0.7;
+      ctx.fillStyle = v>0? color : '#1c2129';
+      ctx.fillRect(x, H-padB-h, w, h);
+    });
+    ctx.fillStyle='#8a929c'; ctx.font='9px "IBM Plex Mono",monospace'; ctx.textAlign='center';
+    const step = Math.ceil(labels.length/12);
+    labels.forEach((l,i)=>{ if(i%step===0) ctx.fillText(l, padL+i*bw+bw/2, H-6); });
+    ctx.textAlign='left';
+  }
+
+  function renderCharts(){
+    const todayStr = new Date().toDateString();
+    const hourBins = new Array(24).fill(0);
+    state.violations.filter(v=>new Date(v.time).toDateString()===todayStr).forEach(v=>hourBins[new Date(v.time).getHours()]++);
+    drawBarChart($('chartHourly'), hourBins.map(String), hourBins, '#ffc53d');
+
+    const dayLabels=[], dayValues=[];
+    for(let i=6;i>=0;i--){
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const ds = d.toDateString();
+      dayLabels.push(d.toLocaleDateString('th-TH',{weekday:'short'}));
+      dayValues.push(state.violations.filter(v=>new Date(v.time).toDateString()===ds).length);
+    }
+    drawBarChart($('chartDaily'), dayLabels, dayValues, '#34d2ff');
+
+    const durBins = new Array(10).fill(0); // 0-5,5-10,...45-50+
+    state.violations.forEach(v=>{ const idx=Math.min(9,Math.floor(v.duration/5)); durBins[idx]++; });
+    drawBarChart($('chartDuration'), durBins.map((_,i)=>i*5+'s'), durBins, '#ff4438');
+  }
+
+  /* ---------- export ---------- */
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }
+  function exportCsv(){
+    const header = 'time,date,duration_sec,overlap_pct,confidence_pct\n';
+    const rows = state.violations.map(v=>`${fmtTime(v.time)},${fmtDate(v.time)},${v.duration},${v.overlap},${v.confidence}`).join('\n');
+    downloadBlob(new Blob([header+rows],{type:'text/csv'}), 'violations.csv');
+  }
+  function exportJson(){
+    downloadBlob(new Blob([JSON.stringify(state.violations,null,2)],{type:'application/json'}), 'violations.json');
+  }
+  $('btnExportCsv').addEventListener('click', exportCsv);
+  $('btnExportJson').addEventListener('click', exportJson);
+  $('btnExportQuick').addEventListener('click', exportCsv);
+  $('btnClearData').addEventListener('click',()=>{
+    if(!confirm('ล้างข้อมูลสถิติทั้งหมด?')) return;
+    state.violations=[]; renderLog(); updateSummary(); renderCharts();
+  });
+
+  $('btnCapture').addEventListener('click',()=>{
+    if(!state.running){ alert('กรุณาเปิดกล้องก่อน'); return; }
+    addPhoto(captureFrame());
+  });
+
+  $('btnSound').addEventListener('click',()=>{
+    state.soundOn = !state.soundOn;
+    $('btnSound').textContent = state.soundOn? '🔊 เสียง ON' : '🔇 เสียง OFF';
+    $('btnSound').classList.toggle('active-toggle', state.soundOn);
+  });
+
+  /* ---------- settings wiring ---------- */
+  function bindRange(id, valId, key, fmt){
+    const el = $(id);
+    el.addEventListener('input',()=>{
+      const v = parseFloat(el.value);
+      state.settings[key] = v;
+      $(valId).textContent = fmt?fmt(v):v;
+    });
+  }
+  bindRange('cfgConfidence','valConf','confidence', v=>v.toFixed(2));
+  bindRange('cfgOverlap','valOverlap','overlapPct', v=>v+'%');
+  bindRange('cfgDelay','valDelay','delaySec', v=>v);
+  bindRange('cfgBoxWidth','valBoxWidth','boxWidth', v=>v);
+  bindRange('cfgRate','valRate','rate', v=>v.toFixed(1));
+  bindRange('cfgInterval','valInterval','interval', v=>v);
+
+  $('cfgAlertText').addEventListener('input', e=>{ state.settings.alertText = e.target.value; });
+  $('cfgResolution').addEventListener('change', e=>{ state.settings.resolution = e.target.value; });
+
+  document.querySelectorAll('.seg button[data-lang]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.seg button[data-lang]').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); state.settings.lang = b.dataset.lang;
+    });
+  });
+  document.querySelectorAll('.seg button[data-auto]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.seg button[data-auto]').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); state.settings.autoCapture = b.dataset.auto==='on';
+    });
+  });
+  document.querySelectorAll('.seg button[data-disp]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll(`.seg button[data-disp="${b.dataset.disp}"]`).forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      const on = b.dataset.v==='on';
+      if(b.dataset.disp==='box') state.settings.showBox = on;
+      if(b.dataset.disp==='label') state.settings.showLabel = on;
+      if(b.dataset.disp==='zone') state.settings.showZone = on;
+    });
+  });
+  $('btnTestSound').addEventListener('click',()=>speak(state.settings.alertText));
+
+  /* ---------- init ---------- */
+  renderLog(); updateSummary(); renderPhotos(); renderCharts();
+})();
+</script>
 </body>
 </html>
