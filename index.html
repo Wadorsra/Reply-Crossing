@@ -292,6 +292,29 @@
         <div class="field"><div class="lbl">แสดงพื้นที่โซนทางม้าลาย (fill)</div>
           <div class="toggle2"><div class="active" data-val="on" id="fillOn">แสดง</div><div data-val="off" id="fillOff">ซ่อน</div></div></div>
       </div>
+
+      <div class="panel">
+        <h2>Roboflow Local Workflow</h2>
+        <div class="field"><div class="lbl">โหมด Inference Server</div>
+          <div class="toggle2"><div data-val="on" id="rfOn">เปิด</div><div class="active" data-val="off" id="rfOff">ปิด</div></div></div>
+        <div class="field"><div class="lbl">Inference API URL</div>
+          <input type="text" id="rfApiUrl" value="http://localhost:9001"></div>
+        <div class="field"><div class="lbl">Workspace</div>
+          <input type="text" id="rfWorkspace" value="manumethawee-gmail-com"></div>
+        <div class="field"><div class="lbl">Workflow</div>
+          <input type="text" id="rfWorkflow" value="motorcycle-detection-tigermomanu-vmotorcycle-detection-tigermomanu-1-yolo11n-t1-logic"></div>
+        <div class="field"><div class="lbl">Image input name</div>
+          <input type="text" id="rfImageInput" value="image"></div>
+        <div class="field"><div class="lbl">API key (เก็บเฉพาะในเครื่องนี้)</div>
+          <input type="text" id="rfApiKey" placeholder="ใส่ API key เมื่อรัน private workflow"></div>
+        <div class="field"><div class="lbl">ส่งภาพทุก <b id="lblRfInterval">900 ms</b></div>
+          <input type="range" id="rfInterval" min="250" max="3000" step="50" value="900"></div>
+        <div class="toolbar" style="margin-top:0;">
+          <button class="btn" id="rfTestBtn">ทดสอบ 1 เฟรม</button>
+          <button class="btn" id="rfClearBtn">ล้างผล Workflow</button>
+        </div>
+        <div class="hint" id="rfStatus">ปิดอยู่ · ต้องรัน inference server start หรือโค้ด Python local ที่พอร์ต 9001 ก่อน</div>
+      </div>
     </div>
   </div>
 
@@ -319,7 +342,7 @@
 
 </main>
 
-<footer>DETECTOR RUNS FULLY IN-BROWSER · TENSORFLOW.JS + COCO-SSD · PHYSICS ENGINE ADDED ON TOP · NO DATA LEAVES THIS PAGE</footer>
+<footer>DETECTOR RUNS IN-BROWSER · OPTIONAL ROBOFLOW LOCAL INFERENCE SERVER · TENSORFLOW.JS + COCO-SSD · PHYSICS ENGINE ADDED ON TOP</footer>
 
 <script>
 (function(){
@@ -347,6 +370,11 @@
   const cooldownSlider=document.getElementById('cooldownSlider'), lblCooldown=document.getElementById('lblCooldown');
   const voiceSpeedSlider=document.getElementById('voiceSpeedSlider'), lblVoiceSpeed=document.getElementById('lblVoiceSpeed');
   const alertMsg=document.getElementById('alertMsg'), camSelect=document.getElementById('camSelect'), resSelect=document.getElementById('resSelect');
+  const rfApiUrl=document.getElementById('rfApiUrl'), rfWorkspace=document.getElementById('rfWorkspace');
+  const rfWorkflow=document.getElementById('rfWorkflow'), rfImageInput=document.getElementById('rfImageInput');
+  const rfApiKey=document.getElementById('rfApiKey'), rfInterval=document.getElementById('rfInterval');
+  const lblRfInterval=document.getElementById('lblRfInterval'), rfStatus=document.getElementById('rfStatus');
+  const rfTestBtn=document.getElementById('rfTestBtn'), rfClearBtn=document.getElementById('rfClearBtn');
 
   // ---------- clock ----------
   setInterval(()=>{ clockEl.textContent = new Date().toLocaleTimeString('th-TH'); }, 1000);
@@ -367,11 +395,15 @@
     on.addEventListener('click', ()=>{ on.classList.add('active'); off.classList.remove('active'); cb('on'); });
     off.addEventListener('click', ()=>{ off.classList.add('active'); on.classList.remove('active'); cb('off'); });
   }
-  let settings = { bbox:true, label:true, fill:true, autoSnap:true, voiceLang:'th' };
+  let settings = { bbox:true, label:true, fill:true, autoSnap:true, voiceLang:'th', rfEnabled:false };
   wireToggle('bboxOn','bboxOff', v=>settings.bbox = v==='on');
   wireToggle('labelOn','labelOff', v=>settings.label = v==='on');
   wireToggle('fillOn','fillOff', v=>settings.fill = v==='on');
   wireToggle('autoSnapOn','autoSnapOff', v=>settings.autoSnap = v==='on');
+  wireToggle('rfOn','rfOff', v=>{
+    settings.rfEnabled = v==='on';
+    rfStatus.textContent = settings.rfEnabled ? 'เปิดอยู่ · จะส่งเฟรมไป Local Workflow ระหว่างตรวจจับ' : 'ปิดอยู่';
+  });
   wireToggle('voiceTh','voiceEn', v=>settings.voiceLang = v==='on' ? settings.voiceLang : settings.voiceLang);
   document.getElementById('voiceTh').addEventListener('click', ()=>settings.voiceLang='th');
   document.getElementById('voiceEn').addEventListener('click', ()=>settings.voiceLang='en');
@@ -382,6 +414,9 @@
   delaySlider.oninput = ()=> lblDelay.textContent = delaySlider.value + ' s';
   cooldownSlider.oninput = ()=> lblCooldown.textContent = cooldownSlider.value + ' s';
   voiceSpeedSlider.oninput = ()=> lblVoiceSpeed.textContent = parseFloat(voiceSpeedSlider.value).toFixed(1);
+  rfInterval.oninput = ()=> lblRfInterval.textContent = rfInterval.value + ' ms';
+  rfApiKey.value = localStorage.getItem('rfApiKey') || '';
+  rfApiKey.addEventListener('change', ()=>localStorage.setItem('rfApiKey', rfApiKey.value.trim()));
 
   // ---------- traffic light (manual) ----------
   // ไฟแดง = โหมดตรวจจับทำงาน (ตรวจจับรถและเช็คการละเมิด) · ไฟเขียว = ปิดการตรวจจับทั้งหมด (ประหยัดการประมวลผลและไม่เช็คการละเมิด)
@@ -631,6 +666,9 @@
   const trackColors = ['#3FD0E0','#F5B942','#2FD06B','#E5484D','#B48CE0','#FF9F5A'];
   let lastFrameTime = performance.now();
   let fpsSmooth = 0;
+  let rfPredictions = [];
+  let rfLastRequest = 0;
+  let rfInFlight = false;
 
   function updateStats(){
     document.getElementById('statTotal').textContent = violationsTotal;
@@ -638,6 +676,113 @@
     document.getElementById('statAvgSpeed').textContent = violationSpeeds.length ? (violationSpeeds.reduce((a,b)=>a+b,0)/violationSpeeds.length).toFixed(2) : '--';
     document.getElementById('statAvgOverlap').textContent = violationOverlaps.length ? (violationOverlaps.reduce((a,b)=>a+b,0)/violationOverlaps.length).toFixed(0)+'%' : '--%';
   }
+
+  function getFrameDataUrl(maxWidth=960){
+    if(!video.videoWidth || !video.videoHeight) return null;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    const w = Math.max(1, Math.round(video.videoWidth * scale));
+    const h = Math.max(1, Math.round(video.videoHeight * scale));
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    tmp.getContext('2d').drawImage(video, 0, 0, w, h);
+    return { dataUrl: tmp.toDataURL('image/jpeg', 0.82), width:w, height:h };
+  }
+
+  function collectPredictionArrays(obj, out=[]){
+    if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      if(obj.some(v=>v && typeof v==='object' && (('x' in v && 'y' in v) || 'bbox' in v || 'bounding_box' in v))){
+        out.push(obj);
+      }
+      obj.forEach(v=>collectPredictionArrays(v, out));
+      return out;
+    }
+    Object.values(obj).forEach(v=>collectPredictionArrays(v, out));
+    return out;
+  }
+
+  function normalizeRfPrediction(p, srcW, srcH){
+    const label = p.class || p.class_name || p.label || p.name || p.predicted_class || 'workflow';
+    const score = Number(p.confidence ?? p.score ?? p.probability ?? 1);
+    let x, y, w, h;
+    if(Array.isArray(p.bbox)){
+      if(p.bbox.length >= 4){ [x,y,w,h] = p.bbox; }
+    } else if(p.bounding_box && typeof p.bounding_box==='object'){
+      const b = p.bounding_box;
+      x = b.x ?? b.left ?? b.xmin; y = b.y ?? b.top ?? b.ymin;
+      w = b.width ?? ((b.xmax ?? b.right) - x);
+      h = b.height ?? ((b.ymax ?? b.bottom) - y);
+    } else if('x' in p && 'y' in p && ('width' in p || 'w' in p) && ('height' in p || 'h' in p)){
+      w = Number(p.width ?? p.w); h = Number(p.height ?? p.h);
+      x = Number(p.x) - w/2; y = Number(p.y) - h/2;
+    } else if('xmin' in p && 'ymin' in p && 'xmax' in p && 'ymax' in p){
+      x = Number(p.xmin); y = Number(p.ymin);
+      w = Number(p.xmax) - x; h = Number(p.ymax) - y;
+    }
+    if([x,y,w,h].some(v=>!Number.isFinite(Number(v)))) return null;
+    x=Number(x); y=Number(y); w=Number(w); h=Number(h);
+    if(w <= 1 && h <= 1){
+      x *= srcW; y *= srcH; w *= srcW; h *= srcH;
+    }
+    const sx = overlay.width / srcW, sy = overlay.height / srcH;
+    return { x:x*sx, y:y*sy, w:w*sx, h:h*sy, cls:String(label), score:Number.isFinite(score)?score:1, source:'roboflow' };
+  }
+
+  function extractRfBoxes(result, srcW, srcH){
+    return collectPredictionArrays(result)
+      .flat()
+      .map(p=>normalizeRfPrediction(p, srcW, srcH))
+      .filter(Boolean);
+  }
+
+  async function runRoboflowWorkflow(force=false){
+    if(!settings.rfEnabled && !force) return rfPredictions;
+    if(!stream || rfInFlight) return rfPredictions;
+    const now = performance.now();
+    if(!force && now - rfLastRequest < Number(rfInterval.value)) return rfPredictions;
+    const frame = getFrameDataUrl();
+    if(!frame) return rfPredictions;
+    rfLastRequest = now;
+    rfInFlight = true;
+    const base = rfApiUrl.value.trim().replace(/\/+$/, '');
+    const endpoint = base + '/infer/workflows/' + encodeURIComponent(rfWorkspace.value.trim()) + '/' + encodeURIComponent(rfWorkflow.value.trim());
+    const body = {
+      inputs: {
+        [rfImageInput.value.trim() || 'image']: {
+          type: 'base64',
+          value: frame.dataUrl.split(',')[1]
+        }
+      }
+    };
+    const key = rfApiKey.value.trim();
+    if(key) body.api_key = key;
+    try{
+      const res = await fetch(endpoint, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      rfPredictions = extractRfBoxes(data, frame.width, frame.height);
+      rfStatus.textContent = 'เชื่อมต่อแล้ว · พบผลลัพธ์ ' + rfPredictions.length + ' กล่อง · ' + new Date().toLocaleTimeString('th-TH');
+      return rfPredictions;
+    }catch(e){
+      rfStatus.textContent = 'เชื่อมต่อไม่ได้: ' + e.message + ' · ตรวจว่า localhost:9001 เปิดอยู่และ CORS อนุญาต';
+      return rfPredictions;
+    }finally{
+      rfInFlight = false;
+    }
+  }
+
+  rfTestBtn.addEventListener('click', async ()=>{
+    if(!stream){ rfStatus.textContent = 'เปิดกล้องก่อนจึงจะทดสอบ 1 เฟรมได้'; return; }
+    await runRoboflowWorkflow(true);
+  });
+  rfClearBtn.addEventListener('click', ()=>{
+    rfPredictions = [];
+    rfStatus.textContent = 'ล้างผล Workflow แล้ว';
+  });
 
   async function detectLoop(){
     if(!stream) return;
@@ -670,8 +815,14 @@
     // map to overlay coords
     let boxes = vehicles.map(p=>({
       x:p.bbox[0]*sx, y:p.bbox[1]*sy, w:p.bbox[2]*sx, h:p.bbox[3]*sy,
-      cls:p.class, score:p.score
+      cls:p.class, score:p.score, source:'coco'
     }));
+    if(settings.rfEnabled){
+      await runRoboflowWorkflow(false);
+      if(rfPredictions.length){
+        boxes = boxes.concat(rfPredictions.map(b=>Object.assign({}, b)));
+      }
+    }
 
     // ---- centerline filter: เก็บเฉพาะรถที่ "จุดศูนย์กลาง" อยู่ในเขตกึ่งกลาง (zone) เท่านั้น ----
     // ถ้ายังไม่ได้วาดโซน ให้ไม่ตรวจจับรถเลย (ไม่มี centerline อ้างอิง)
@@ -862,7 +1013,8 @@
         if(settings.label){
           const idTxt = tr ? ('#'+tr.id+' ') : '';
           const vTxt = tr && tr._v!==null ? (' · '+(metersPerPixel? tr._v.toFixed(1)+'m/s': tr._v.toFixed(0)+'px/s')) : '';
-          const txt = idTxt+b.cls+' '+(b.score*100).toFixed(0)+'%' + (tr && tr._overlap ? (' · '+tr._overlap.toFixed(0)+'%') : '') + vTxt;
+          const srcTxt = b.source==='roboflow' ? 'RF ' : '';
+          const txt = srcTxt+idTxt+b.cls+' '+(b.score*100).toFixed(0)+'%' + (tr && tr._overlap ? (' · '+tr._overlap.toFixed(0)+'%') : '') + vTxt;
           octx.fillStyle = col;
           octx.font = '11px JetBrains Mono, monospace';
           octx.fillText(txt, b.x+2, Math.max(10,b.y-4));
