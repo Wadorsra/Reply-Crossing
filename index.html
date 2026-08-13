@@ -183,6 +183,7 @@
 
         <div class="toolbar">
           <button class="btn primary" id="camBtn">📷 เปิดกล้อง</button>
+          <button class="btn" id="flipCamBtn" disabled>🔄 กลับกล้อง</button>
           <button class="btn" id="autoZoneBtn" disabled>✨ ตรวจจับโซนอัตโนมัติ</button>
           <button class="btn" id="drawZoneBtn" disabled>✏️ วาดโซนเอง</button>
           <button class="btn" id="calibBtn" disabled>📏 ตั้งมาตราส่วน</button>
@@ -204,6 +205,7 @@
         <div class="vlist" id="physList"></div>
         <div class="physicsnote">
           <code>v = Δs/Δt</code> คำนวณแยกอิสระต่อรถแต่ละคัน (แต่ละ track มีประวัติตำแหน่งของตัวเอง ไม่ปนกัน) ·
+          <code>ระยะเบรก = v² / 2a</code> และ <code>ระยะหยุดรถ = ระยะตอบสนอง + ระยะเบรก</code> โดยใช้ v เป็น m/s และ a เป็น m/s² หลังตั้งมาตราส่วนแล้ว ·
           ตรวจจับเฉพาะรถที่<b>จุดศูนย์กลาง</b>อยู่ใน<b>เขตกึ่งกลางทางม้าลาย (centerline zone)</b> ที่วาดไว้เท่านั้น รถนอกเขตจะถูกข้ามไปโดยสิ้นเชิง ·
           ถ้ามีรถมากกว่า 1 คันในเขตพร้อมกัน ระบบจะประมวลผลความเร็ว/สถานะของแต่ละคันพร้อมกันแบบขนาน (ไม่นำความเร็วมารวมกัน) ·
           ถือว่า "ละเมิด" เมื่อ % ทับซ้อนโซน ≥ เกณฑ์ที่ตั้งไว้ <b>และ</b> v ≤ เกณฑ์หยุด ต่อเนื่องนานกว่าเวลาหน่วง <b>และ</b> สัญญาณไฟเป็นสีแดง
@@ -223,6 +225,7 @@
         <div class="stat"><div class="n" id="statToday">0</div><div class="l">เหตุการณ์วันนี้</div></div>
         <div class="stat"><div class="n" id="statAvgSpeed">--</div><div class="l">ความเร็วเฉลี่ยขณะละเมิด (m/s)</div></div>
         <div class="stat"><div class="n" id="statAvgOverlap">--%</div><div class="l">% ทับซ้อนเฉลี่ย</div></div>
+        <div class="stat"><div class="n" id="statAvgStopDist">--</div><div class="l">ระยะหยุดรถเฉลี่ย (m)</div></div>
       </div>
     </div>
     <div class="panel">
@@ -258,6 +261,10 @@
           <input type="range" id="stopSpeedSlider" min="0" max="1.5" step="0.05" value="0.15"></div>
         <div class="field"><div class="lbl">หน่วงเวลาก่อนแจ้งเตือน <b id="lblDelay">2 s</b></div>
           <input type="range" id="delaySlider" min="0" max="6" step="0.5" value="2"></div>
+        <div class="field"><div class="lbl">เวลาตอบสนองคนขับ <b id="lblReactionTime">1.0 s</b></div>
+          <input type="range" id="reactionTimeSlider" min="0" max="3" step="0.1" value="1.0"></div>
+        <div class="field"><div class="lbl">ความหน่วงขณะเบรก a <b id="lblBrakeDecel">6.0 m/s²</b></div>
+          <input type="range" id="brakeDecelSlider" min="1" max="12" step="0.5" value="6.0"></div>
 
         <h2 style="margin-top:18px;">กล้องและภาพถ่าย</h2>
         <div class="field"><div class="lbl">กล้อง</div>
@@ -351,6 +358,7 @@
   const octx=overlay.getContext('2d'), stage=document.getElementById('stage');
   const placeholder=document.getElementById('placeholder'), placeholderText=document.getElementById('placeholderText');
   const camBtn=document.getElementById('camBtn'), autoZoneBtn=document.getElementById('autoZoneBtn');
+  const flipCamBtn=document.getElementById('flipCamBtn');
   const drawZoneBtn=document.getElementById('drawZoneBtn'), calibBtn=document.getElementById('calibBtn');
   const clearZoneBtn=document.getElementById('clearZoneBtn'), snapBtn=document.getElementById('snapBtn');
   const soundBtn=document.getElementById('soundBtn');
@@ -367,6 +375,8 @@
   const overlapSlider=document.getElementById('overlapSlider'), lblOverlap=document.getElementById('lblOverlap');
   const stopSpeedSlider=document.getElementById('stopSpeedSlider'), lblStopSpeed=document.getElementById('lblStopSpeed');
   const delaySlider=document.getElementById('delaySlider'), lblDelay=document.getElementById('lblDelay');
+  const reactionTimeSlider=document.getElementById('reactionTimeSlider'), lblReactionTime=document.getElementById('lblReactionTime');
+  const brakeDecelSlider=document.getElementById('brakeDecelSlider'), lblBrakeDecel=document.getElementById('lblBrakeDecel');
   const cooldownSlider=document.getElementById('cooldownSlider'), lblCooldown=document.getElementById('lblCooldown');
   const voiceSpeedSlider=document.getElementById('voiceSpeedSlider'), lblVoiceSpeed=document.getElementById('lblVoiceSpeed');
   const alertMsg=document.getElementById('alertMsg'), camSelect=document.getElementById('camSelect'), resSelect=document.getElementById('resSelect');
@@ -412,6 +422,8 @@
   overlapSlider.oninput = ()=> lblOverlap.textContent = overlapSlider.value + '%';
   stopSpeedSlider.oninput = ()=> lblStopSpeed.textContent = parseFloat(stopSpeedSlider.value).toFixed(2) + ' m/s';
   delaySlider.oninput = ()=> lblDelay.textContent = delaySlider.value + ' s';
+  reactionTimeSlider.oninput = ()=> lblReactionTime.textContent = parseFloat(reactionTimeSlider.value).toFixed(1) + ' s';
+  brakeDecelSlider.oninput = ()=> lblBrakeDecel.textContent = parseFloat(brakeDecelSlider.value).toFixed(1) + ' m/s²';
   cooldownSlider.oninput = ()=> lblCooldown.textContent = cooldownSlider.value + ' s';
   voiceSpeedSlider.oninput = ()=> lblVoiceSpeed.textContent = parseFloat(voiceSpeedSlider.value).toFixed(1);
   rfInterval.oninput = ()=> lblRfInterval.textContent = rfInterval.value + ' ms';
@@ -485,30 +497,52 @@
   }
 
   let stream = null;
-  camBtn.addEventListener('click', async ()=>{
+  let cameraFacingMode = 'environment';
+
+  function stopCamera(){
     if(stream){
       stream.getTracks().forEach(t=>t.stop());
       stream = null; video.srcObject = null;
       placeholder.style.display='flex'; placeholderText.textContent='กดปุ่ม "เปิดกล้อง" เพื่อเริ่มต้น';
       camBtn.textContent = '📷 เปิดกล้อง';
-      [autoZoneBtn,drawZoneBtn,calibBtn,snapBtn].forEach(b=>b.disabled=true);
-      return;
+      [flipCamBtn,autoZoneBtn,drawZoneBtn,calibBtn,snapBtn].forEach(b=>b.disabled=true);
     }
+  }
+
+  async function openCamera(){
     const [w,h] = resSelect.value.split('x').map(Number);
     const constraints = { video: { width:{ideal:w}, height:{ideal:h} } };
     if(camSelect.value) constraints.video.deviceId = { exact: camSelect.value };
+    else constraints.video.facingMode = { ideal: cameraFacingMode };
     try{
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
       await video.play();
       placeholder.style.display='none';
       camBtn.textContent = '⏹️ ปิดกล้อง';
+      flipCamBtn.textContent = cameraFacingMode === 'environment' ? '🔄 กล้องหน้า' : '🔄 กล้องหลัง';
       resizeOverlay();
-      [autoZoneBtn,drawZoneBtn,calibBtn,snapBtn].forEach(b=>b.disabled=false);
+      [flipCamBtn,autoZoneBtn,drawZoneBtn,calibBtn,snapBtn].forEach(b=>b.disabled=false);
       listCameras();
       detectLoop();
     }catch(e){
       placeholderText.textContent = 'เปิดกล้องไม่ได้ — ตรวจสอบสิทธิ์การเข้าถึงกล้อง';
+    }
+  }
+
+  camBtn.addEventListener('click', async ()=>{
+    if(stream){ stopCamera(); return; }
+    await openCamera();
+  });
+
+  flipCamBtn.addEventListener('click', async ()=>{
+    cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    camSelect.value = '';
+    if(stream){
+      stopCamera();
+      await openCamera();
+    } else {
+      flipCamBtn.textContent = cameraFacingMode === 'environment' ? '🔄 กล้องหน้า' : '🔄 กล้องหลัง';
     }
   });
 
@@ -616,7 +650,7 @@
   // ---------- snapshot ----------
   let photos = []; // {url, t}
   let violationsTotal = 0, violationsToday = 0;
-  let violationSpeeds = [], violationOverlaps = [];
+  let violationSpeeds = [], violationOverlaps = [], violationStopDistances = [];
 
   function takeSnapshot(){
     const tmp = document.createElement('canvas');
@@ -658,6 +692,21 @@
     logEl.prepend(div);
   }
 
+  function calcStoppingDistance(vMps){
+    if(!metersPerPixel || !Number.isFinite(vMps)) return null;
+    const reactionTime = Math.max(0, parseFloat(reactionTimeSlider.value) || 0);
+    const brakeDecel = Math.max(0.1, parseFloat(brakeDecelSlider.value) || 0.1);
+    const reactionDistance = vMps * reactionTime;
+    const brakeDistance = (vMps * vMps) / (2 * brakeDecel);
+    return {
+      reactionTime,
+      brakeDecel,
+      reactionDistance,
+      brakeDistance,
+      totalDistance: reactionDistance + brakeDistance
+    };
+  }
+
   // ---------- tracking + physics ----------
   // แต่ละคันมี track อิสระของตัวเอง (id, history ตำแหน่งของตัวเอง) ความเร็ว/สถานะจึงไม่ถูกนำไปรวมกับคันอื่น
   let tracks = []; // {id,cx,cy,w,h,history:[{t,x,y}],belowSince,alerted,lastSeen,color}
@@ -675,6 +724,7 @@
     document.getElementById('statToday').textContent = violationsToday;
     document.getElementById('statAvgSpeed').textContent = violationSpeeds.length ? (violationSpeeds.reduce((a,b)=>a+b,0)/violationSpeeds.length).toFixed(2) : '--';
     document.getElementById('statAvgOverlap').textContent = violationOverlaps.length ? (violationOverlaps.reduce((a,b)=>a+b,0)/violationOverlaps.length).toFixed(0)+'%' : '--%';
+    document.getElementById('statAvgStopDist').textContent = violationStopDistances.length ? (violationStopDistances.reduce((a,b)=>a+b,0)/violationStopDistances.length).toFixed(2) : '--';
   }
 
   function getFrameDataUrl(maxWidth=960){
@@ -872,6 +922,7 @@
         }
       }
       tr._v = vM;
+      tr._stopCalc = calcStoppingDistance(vM);
       const ov = overlapPercent([tr.cx-tr.w/2, tr.cy-tr.h/2, tr.w, tr.h], zone);
       tr._overlap = ov;
 
@@ -888,7 +939,11 @@
               tr.alerted = true;
               violationsTotal++; violationsToday++;
               violationSpeeds.push(vM); violationOverlaps.push(ov);
-              addLog('⚠ ละเมิด: รถ #'+tr.id+' หยุดทับทางม้าลาย (overlap '+ov.toFixed(0)+'%)', 'alert');
+              if(tr._stopCalc) violationStopDistances.push(tr._stopCalc.totalDistance);
+              const stopText = tr._stopCalc
+                ? ' · ระยะหยุดรถ '+tr._stopCalc.totalDistance.toFixed(2)+' m (ตอบสนอง '+tr._stopCalc.reactionDistance.toFixed(2)+' m + เบรก '+tr._stopCalc.brakeDistance.toFixed(2)+' m)'
+                : ' · ยังไม่ได้ตั้งมาตราส่วน จึงคำนวณระยะหยุดรถเป็นเมตรไม่ได้';
+              addLog('⚠ ละเมิด: รถ #'+tr.id+' หยุดทับทางม้าลาย (overlap '+ov.toFixed(0)+'%)'+stopText, 'alert');
               speakAlert();
               if(settings.autoSnap) takeSnapshot();
               updateStats();
@@ -967,6 +1022,10 @@
       } else {
         speedStr = '–<span> m/s</span>'; speedKmhStr='–<span> km/h</span>';
       }
+      const stopCalc = tr._stopCalc;
+      const reactionStr = stopCalc ? stopCalc.reactionDistance.toFixed(2)+'<span> m</span>' : '–<span> m</span>';
+      const brakeStr = stopCalc ? stopCalc.brakeDistance.toFixed(2)+'<span> m</span>' : '–<span> m</span>';
+      const stopDistStr = stopCalc ? stopCalc.totalDistance.toFixed(2)+'<span> m</span>' : 'ตั้งมาตราส่วนก่อน';
       const gaugePct = v!==null ? Math.max(0,Math.min(100,(v/3)*100)) : 0;
 
       return '<div class="vcard '+state+'" style="border-left-color:'+tr.color+'">'
@@ -979,6 +1038,11 @@
           + '<div class="m"><div class="k">ความเร็ว</div><div class="v">'+speedStr+'</div></div>'
           + '<div class="m"><div class="k">km/h</div><div class="v">'+speedKmhStr+'</div></div>'
           + '<div class="m"><div class="k">% ทับซ้อนโซน</div><div class="v">'+ov.toFixed(0)+'<span> %</span></div></div>'
+        + '</div>'
+        + '<div class="vmetrics">'
+          + '<div class="m"><div class="k">ระยะตอบสนอง</div><div class="v">'+reactionStr+'</div></div>'
+          + '<div class="m"><div class="k">ระยะเบรก v²/2a</div><div class="v">'+brakeStr+'</div></div>'
+          + '<div class="m"><div class="k">ระยะหยุดรถรวม</div><div class="v">'+stopDistStr+'</div></div>'
         + '</div>'
         + '<div class="vtrack"><div class="vfill" style="width:'+gaugePct+'%;background:'+tr.color+'"></div></div>'
       + '</div>';
